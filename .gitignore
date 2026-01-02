@@ -1,0 +1,117 @@
+# .NET 编译输出
+bin/
+obj/
+out/
+
+# Visual Studio / Rider 缓存和用户设置
+.vs/
+.vscode/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.userprefs
+
+# 构建结果
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+# NuGet 包
+*.nupkg
+*.snupkg
+**/packages/*
+!**/packages/build/
+*.nuget.props
+*.nuget.targets
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# 测试结果
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+*.VisualState.xml
+TestResult.xml
+nunit-*.xml
+
+# 项目特定：导出的 CSV 文件（通常不需要提交）
+rawexd/
+*.csv
+
+# 项目特定：参考源码目录（仅用于开发参考）
+# SaintCoinach/
+
+# 项目特定：Schema 定义（如果是从外部获取的）
+# EXDSchema/
+
+# Windows 系统文件
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# macOS 系统文件
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# 临时文件
+*.tmp
+*.temp
+*.log
+*.swp
+*~
+
+# ReSharper
+_ReSharper*/
+*.[Rr]e[Ss]harper
+*.DotSettings.user
+
+# Rider
+.idea/
+*.sln.iml
+
+# User-specific files
+*.rsuser
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Mono Auto Generated Files
+mono_crash.*
+
+# Windows Installer files
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+
+# JetBrains Rider
+.idea/
+*.sln.iml
+
+# CodeRush personal settings
+.cr/personal
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Backup files
+*.bak
+*.backup
