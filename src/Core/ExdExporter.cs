@@ -15,6 +15,17 @@ public class ExdExporter
 {
     private const int BufferSize = 65536; // 64KB 缓冲区
 
+    // 使用 ThreadLocal 缓存解码器，既保证了线程安全，又避免了每个单元格都 new 的海量分配
+    private static readonly ThreadLocal<XivStringDecoder> _threadDecoder = new(() =>
+        new XivStringDecoder()
+    );
+
+    // 全局静态目录缓存, 避免多个语言重复调用 Directory.Exists/CreateDirectory
+    private static readonly ConcurrentDictionary<string, byte> _createdDirs = new();
+
+    // 静态编码实例
+    private static readonly UTF8Encoding _utf8WithBom = new(true);
+
     public void ExportSheet(
         GameData lumina,
         string sheetName,
@@ -51,10 +62,14 @@ public class ExdExporter
         var fileName = sheetName.Replace('/', Path.DirectorySeparatorChar);
         var outputPath = Path.Combine(outputDir, fileName + ".csv");
         var outputFileDir = Path.GetDirectoryName(outputPath);
-        if (!string.IsNullOrEmpty(outputFileDir))
-            Directory.CreateDirectory(outputFileDir);
 
-        using var writer = new StreamWriter(outputPath, false, new UTF8Encoding(true), 65536);
+        if (!string.IsNullOrEmpty(outputFileDir) && !_createdDirs.ContainsKey(outputFileDir))
+        {
+            Directory.CreateDirectory(outputFileDir);
+            _createdDirs.TryAdd(outputFileDir, 0);
+        }
+
+        using var writer = new StreamWriter(outputPath, false, _utf8WithBom, 65536);
 
         var indexedColumns = columns
             .Select((c, i) => new { Definition = c, OriginalIndex = i })
@@ -195,14 +210,20 @@ public class ExdExporter
     {
         if (type == ExcelColumnDataType.String)
         {
-            // 字符串始终需要更复杂的转义逻辑
             writer.Write('"');
-            writer.Write(value.Replace("\"", "\"\""));
+            // 手动转义，不使用 Replace 分配新字符串
+            foreach (char c in value)
+            {
+                if (c == '"')
+                    writer.Write("\"\"");
+                else
+                    writer.Write(c);
+            }
             writer.Write('"');
         }
         else
         {
-            // 非字符串类型通常不含特殊字符, 执行快速转义写入
+            // 对于数值类型，EscapeCsv 是安全的
             writer.Write(EscapeCsv(value));
         }
     }
@@ -353,7 +374,7 @@ public class ExdExporter
         while (absoluteOffset + length < data.Length && data[absoluteOffset + length] != 0)
             length++;
         var stringData = data.AsSpan(absoluteOffset, length).ToArray();
-        return new XivStringDecoder().Decode(stringData).ToString();
+        return _threadDecoder.Value!.Decode(stringData).ToString();
     }
 
     private string EscapeCsv(string value)

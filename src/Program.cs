@@ -81,13 +81,13 @@ class Program
         var clientResults = new ConcurrentBag<(string key, ClientExportResult result)>();
         object globalConsoleLock = new object();
 
-        // 创建 Schema 缓存池 (Key: 版本号, Value: 该版本的 Schema 字典)
+        // 资源缓存池
         var schemaCache = new ConcurrentDictionary<string, Dictionary<string, ExdSchema>>(
             StringComparer.OrdinalIgnoreCase
         );
+        // GameData 实例缓存，按路径区分。Key: 路径 | Value: GameData 实例
+        var gameDataPool = new Dictionary<string, GameData>(StringComparer.OrdinalIgnoreCase);
 
-        // 获取客户端并行度配置 (建议: 默认不要超过核心数的 1/4)
-        // 获取表导出并行度配置 (默认: CPU核心数)
         // 获取表导出并行度配置 (默认: CPU核心数, 但上限设为 32 以保护 I/O)
         int maxSheetParallelism =
             config.MaxSheetParallelism ?? Math.Min(Environment.ProcessorCount, 32);
@@ -105,9 +105,15 @@ class Program
                 filters,
                 globalConsoleLock,
                 maxSheetParallelism,
-                schemaCache
+                schemaCache,
+                gameDataPool
             );
             clientResults.Add((clientKey, result));
+
+            // 重要：在处理完一个客户端后，手动触发内存回收
+            // 释放上一轮由于海量字符串分配产生的堆压力
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
         }
 
         totalStopwatch.Stop();
@@ -130,7 +136,8 @@ class Program
         List<string> cmdFilters,
         object globalConsoleLock,
         int maxSheetParallelism,
-        ConcurrentDictionary<string, Dictionary<string, ExdSchema>> schemaCache
+        ConcurrentDictionary<string, Dictionary<string, ExdSchema>> schemaCache,
+        Dictionary<string, GameData> gameDataPool
     )
     {
         var logBuffer = new System.Text.StringBuilder();
@@ -236,7 +243,6 @@ class Program
             schemaVersion,
             version =>
             {
-                LogStatus($"正在加载 Schema 版本: {version}...", ConsoleColor.DarkGray);
                 var dir = Path.Combine("./EXDSchema/schemas", version);
                 var service = new SchemaService();
                 return service.LoadSchemas(dir);
@@ -268,11 +274,15 @@ class Program
         try
         {
             var stopwatch = Stopwatch.StartNew();
-            LogDetail("正在初始化 Lumina...");
-            var lumina = new GameData(
-                gamePath,
-                new LuminaOptions { DefaultExcelLanguage = exportLanguage }
-            );
+
+            if (!gameDataPool.TryGetValue(gamePath, out var lumina))
+            {
+                lumina = new GameData(
+                    gamePath,
+                    new LuminaOptions { DefaultExcelLanguage = exportLanguage }
+                );
+                gameDataPool[gamePath] = lumina;
+            }
 
             // 1. 获取所有表名并过滤
             var allSheetNames = lumina.Excel.SheetNames.ToList();
@@ -360,8 +370,12 @@ class Program
             );
 
             stopwatch.Stop();
+            // 保持语言名称固定宽度(18位)，确保后面的 ✓ 和数据完美对齐
+            var langLabel = $"[{clientKey}]".PadRight(6);
+            var langName = exportLanguage.ToString().PadRight(18);
+
             LogStatus(
-                $"✓ {exportLanguage} | {schemaVersion} | {stopwatch.Elapsed.TotalSeconds:F2}s | 成功: {successCount} | 失败: {failedSheets.Count}",
+                $"{langLabel} {langName} | {schemaVersion.PadRight(8)} | 成功: {successCount:D4} | 失败: {failedSheets.Count} | {stopwatch.Elapsed.TotalSeconds, 6:F2}s",
                 ConsoleColor.Green
             );
 
