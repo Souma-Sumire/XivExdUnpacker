@@ -2,7 +2,7 @@ namespace XivExdUnpacker.UI;
 
 public static class Menu
 {
-    public static List<string>? ShowInteractiveMenu(List<string> options)
+    public static List<string>? ShowInteractiveMenu(List<(string Key, string SubText)> options)
     {
         int currentPos = 0;
         bool[] selected = new bool[options.Count];
@@ -39,20 +39,21 @@ public static class Menu
 
                 string cursor = (i == currentPos) ? ">" : " ";
                 string checkbox = selected[i] ? "[*]" : "[ ]";
+                var (key, subText) = options[i];
 
                 if (i == currentPos)
                 {
                     Console.BackgroundColor = ConsoleColor.DarkGray;
                     Console.ForegroundColor = ConsoleColor.Cyan;
                 }
-                Console.Write(
-                    $"{cursor} {checkbox} {options[i]}".PadRight(Console.WindowWidth - 1)
-                );
+
+                string content = $"{cursor} {checkbox} {key.PadRight(4)} | {subText}";
+                Console.Write(content.PadRight(Console.WindowWidth - 1));
                 Console.ResetColor();
             }
 
-            var key = Console.ReadKey(true);
-            switch (key.Key)
+            var inputKey = Console.ReadKey(true);
+            switch (inputKey.Key)
             {
                 case ConsoleKey.UpArrow:
                     currentPos = (currentPos - 1 + options.Count) % options.Count;
@@ -76,6 +77,6 @@ public static class Menu
             }
         }
         Console.WriteLine();
-        return options.Where((t, i) => selected[i]).ToList();
+        return options.Where((t, i) => selected[i]).Select(x => x.Key).ToList();
     }
 }

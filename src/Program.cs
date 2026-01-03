@@ -27,6 +27,10 @@ class Program
 
     record ClientExportResult
     {
+        public string ClientKey { get; init; } = "";
+        public string LanguageName { get; init; } = "";
+        public string SchemaVersion { get; init; } = "";
+        public string OutputDir { get; init; } = "";
         public int SuccessCount { get; init; }
         public int FailedCount { get; init; }
         public double ElapsedSeconds { get; init; }
@@ -51,8 +55,31 @@ class Program
         List<string>? selectedKeys;
         List<string> filters = new List<string>();
 
+        // 准备菜单选项，包含语言和对应的路径显示
+        var menuOptions = config
+            .GetClients()
+            .Select(kvp =>
+            {
+                var key = kvp.Key;
+                var client = kvp.Value;
+                // 定义国际服客户端 (通常共用 Global Path)
+                var internationalKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    "en",
+                    "ja",
+                    "de",
+                    "fr",
+                };
+                string displayPath =
+                    client.Path
+                    ?? (internationalKeys.Contains(key) ? config.GlobalGamePath : "")
+                    ?? "未指定";
+                return (key, displayPath);
+            })
+            .ToList();
+
         // 交互模式
-        selectedKeys = Menu.ShowInteractiveMenu(config.GetClients().Keys.ToList());
+        selectedKeys = Menu.ShowInteractiveMenu(menuOptions);
 
         if (selectedKeys == null || selectedKeys.Count == 0)
         {
@@ -94,7 +121,6 @@ class Program
         maxSheetParallelism = Math.Max(1, Math.Min(maxSheetParallelism, 128)); // 强制物理上限 128
 
         Console.ForegroundColor = ConsoleColor.Cyan;
-        Console.WriteLine($"\n[性能配置] 表导出并行数: {maxSheetParallelism}");
         Console.ResetColor();
 
         foreach (var clientKey in selectedKeys)
@@ -118,16 +144,46 @@ class Program
 
         totalStopwatch.Stop();
 
-        // 按原始顺序输出汇总结果
-        Console.WriteLine("\n" + new string('=', 60));
-        Console.ForegroundColor = ConsoleColor.Cyan;
-        Console.WriteLine(
-            $"所有客户端处理完毕 (总耗时: {totalStopwatch.Elapsed.TotalSeconds:F2}s)"
-        );
-        Console.ResetColor();
-        Console.WriteLine(new string('=', 60));
+        // --- 智能汇总表输出 ---
+        // 按照用户选择的顺序排列结果
+        var orderedResults = selectedKeys
+            .Select(k => clientResults.FirstOrDefault(r => r.key == k).result)
+            .Where(r => r != null)
+            .ToList();
 
-        Console.WriteLine("\n" + new string('=', 60));
+        if (orderedResults.Count > 0)
+        {
+            Console.WriteLine("\n" + new string('=', 64));
+
+            // 动态计算各列所需的最大宽度
+            int maxKeyWidth = orderedResults.Max(r => $"[{r.ClientKey}]".Length);
+            int maxSchemaWidth = orderedResults.Max(r => r.SchemaVersion.Length);
+            int maxSuccessWidth = orderedResults.Max(r => r.SuccessCount.ToString().Length);
+            int maxFailedWidth = orderedResults.Max(r => r.FailedCount.ToString().Length);
+
+            foreach (var r in orderedResults)
+            {
+                // 智能格式化：每一列都根据该列的最长值来对齐
+                string keyPart = $"[{r.ClientKey}]".PadRight(maxKeyWidth);
+                string schemaPart = r.SchemaVersion.PadRight(maxSchemaWidth);
+                string successPart = r.SuccessCount.ToString().PadLeft(maxSuccessWidth);
+                string failedPart = r.FailedCount.ToString().PadLeft(maxFailedWidth);
+                string timePart = r.ElapsedSeconds.ToString("F2").PadLeft(6) + "s";
+                string pathPart = r.OutputDir;
+
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine(
+                    $"{keyPart} ✓ {schemaPart} | 成功: {successPart} | 失败: {failedPart} | {timePart} | {pathPart}"
+                );
+            }
+
+            Console.ResetColor();
+            Console.WriteLine(new string('=', 64));
+            Console.WriteLine(
+                $"所有客户端处理完毕 (总耗时: {totalStopwatch.Elapsed.TotalSeconds:F2}s)"
+            );
+            Console.WriteLine(new string('=', 64));
+        }
     }
 
     static ClientExportResult RunDumpProcess(
@@ -370,12 +426,8 @@ class Program
             );
 
             stopwatch.Stop();
-            // 保持语言名称固定宽度(18位)，确保后面的 ✓ 和数据完美对齐
-            var langLabel = $"[{clientKey}]".PadRight(6);
-            var langName = exportLanguage.ToString().PadRight(18);
-
             LogStatus(
-                $"{langLabel} {langName} | {schemaVersion.PadRight(8)} | 成功: {successCount:D4} | 失败: {failedSheets.Count} | {stopwatch.Elapsed.TotalSeconds, 6:F2}s",
+                $"✓ {schemaVersion.PadLeft(6)} | 成功: {successCount} | 失败: {failedSheets.Count} | {stopwatch.Elapsed.TotalSeconds:F2}s",
                 ConsoleColor.Green
             );
 
@@ -426,9 +478,13 @@ class Program
                     LogDetail($"警告: 保存配置失败: {saveEx.Message}");
                 }
             }
-
+            stopwatch.Stop();
             return new ClientExportResult
             {
+                ClientKey = clientKey,
+                LanguageName = exportLanguage.ToString(),
+                SchemaVersion = schemaVersion,
+                OutputDir = outputDir,
                 SuccessCount = successCount,
                 FailedCount = failedSheets.Count,
                 ElapsedSeconds = stopwatch.Elapsed.TotalSeconds,
@@ -436,13 +492,8 @@ class Program
         }
         catch (Exception ex)
         {
-            LogStatus($"✗ 失败: {ex.Message}", ConsoleColor.Red);
-            return new ClientExportResult
-            {
-                SuccessCount = 0,
-                FailedCount = 0,
-                ElapsedSeconds = 0,
-            };
+            LogStatus($"✗ 运行失败: {ex.Message}", ConsoleColor.Red);
+            return new ClientExportResult();
         }
         finally
         {
