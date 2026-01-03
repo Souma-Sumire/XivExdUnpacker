@@ -70,7 +70,7 @@ class Program
     public class ClientConfig
     {
         public string? Path { get; set; }
-        public string OutputDir { get; set; } = "./rawexd";
+        public string? OutputDir { get; set; }
         public string? SchemaVersion { get; set; }
     }
 
@@ -219,28 +219,18 @@ class Program
 
     static void RunDumpProcess(string clientKey, AppConfig config)
     {
-        // 重置状态
-        gamePath = "";
-        outputDir = "";
-        schemaVersion = "latest";
-        exportLanguage = Language.ChineseSimplified;
+        // 1. 获取配置
+        config.Clients.TryGetValue(clientKey, out var client);
 
-        if (config.Clients.TryGetValue(clientKey, out var client))
-        {
-            gamePath = client.Path ?? config.Global?.Path ?? "";
-            outputDir = client.OutputDir;
-            schemaVersion = client.SchemaVersion ?? config.Global?.SchemaVersion ?? "latest";
+        // 2. 确定最终参数
+        gamePath = client?.Path ?? config.Global?.Path ?? "";
+        outputDir = client?.OutputDir ?? config.Global?.OutputDir ?? "./rawexd";
+        schemaVersion = client?.SchemaVersion ?? config.Global?.SchemaVersion ?? "latest";
 
-            if (KeyToLanguage.TryGetValue(clientKey, out var lang))
-                exportLanguage = lang;
-            else
-                exportLanguage = Language.English;
-        }
-        else
+        // 3. 根据客户端 key 自动选择语言
+        if (!KeyToLanguage.TryGetValue(clientKey, out exportLanguage))
         {
-            // 向后兼容：如果命令行输入的是路径而不是 Key
-            gamePath = clientKey;
-            outputDir = "./rawexd";
+            exportLanguage = Language.English;
         }
 
         schemaDir = Path.Combine("./EXDSchema/schemas", schemaVersion);
@@ -388,7 +378,7 @@ class Program
     /// </summary>
     static AppConfig LoadAppConfig()
     {
-        // 优先检查当前工作目录，方便 dotnet run 或命令行调用
+        // 优先检查当前工作目录
         var configPath = Path.Combine(Directory.GetCurrentDirectory(), "config.yml");
         if (!File.Exists(configPath))
         {
