@@ -1,6 +1,8 @@
 # XivExd Unpacker
 
-基于 [Lumina](https://github.com/NotAdam/Lumina) 和 [EXDSchema](https://github.com/vi-xiv/EXDSchema) 的 FFXIV EXD 解包工具，用于代替 `SaintCoinach.Cmd`。
+基于 [Lumina](https://github.com/NotAdam/Lumina) 和 [EXDSchema](https://github.com/vi-xiv/EXDSchema) 的 FFXIV EXD 解包工具，用于代替 `SaintCoinach.Cmd` 导出 CSV 文件。
+
+暂时只有hexcode。
 
 ## 环境要求
 
