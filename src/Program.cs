@@ -55,14 +55,13 @@ class Program
         List<string>? selectedKeys;
         List<string> filters = new List<string>();
 
-        // 准备菜单选项，包含语言和对应的路径显示
+        // 准备菜单选项
         var menuOptions = config
             .GetClients()
             .Select(kvp =>
             {
                 var key = kvp.Key;
                 var client = kvp.Value;
-                // 定义国际服客户端 (通常共用 Global Path)
                 var internationalKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
                 {
                     "en",
@@ -70,11 +69,11 @@ class Program
                     "de",
                     "fr",
                 };
-                string displayPath =
+                string gamePath =
                     client.Path
                     ?? (internationalKeys.Contains(key) ? config.GlobalGamePath : "")
                     ?? "未指定";
-                return (key, displayPath);
+                return (key, gamePath);
             })
             .ToList();
 
@@ -88,18 +87,16 @@ class Program
             return;
         }
 
-        Console.WriteLine("提示: 成功选择 " + selectedKeys.Count + " 个客户端。");
-
         // 询问过滤器
         Console.ForegroundColor = ConsoleColor.Yellow;
-        Console.WriteLine("\n请输入要导出的表名 (多个用空格分隔，直接回车则导出全部):");
+        Console.WriteLine("表名过滤 (例如: Action Item / 直接回车导出全部):");
         Console.ResetColor();
         Console.Write("> ");
-        var input = Console.ReadLine();
-        if (!string.IsNullOrWhiteSpace(input))
-        {
-            filters = input.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToList();
-        }
+        string input = Console.ReadLine() ?? "";
+        filters = input
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
         Console.CursorVisible = true;
 
@@ -153,36 +150,58 @@ class Program
 
         if (orderedResults.Count > 0)
         {
-            Console.WriteLine("\n" + new string('=', 64));
+            // 动态计算各列所需的最大宽度 (最小宽度保证)
+            int wKey = Math.Max(10, orderedResults.Max(r => $"[{r.ClientKey}]".Length));
+            int wSchema = Math.Max(10, orderedResults.Max(r => r.SchemaVersion.Length));
+            int wSuccess = 8;
+            int wFailed = 8;
+            int wTime = 10;
+            int wPath = orderedResults.Max(r => r.OutputDir.Length);
 
-            // 动态计算各列所需的最大宽度
-            int maxKeyWidth = orderedResults.Max(r => $"[{r.ClientKey}]".Length);
-            int maxSchemaWidth = orderedResults.Max(r => r.SchemaVersion.Length);
-            int maxSuccessWidth = orderedResults.Max(r => r.SuccessCount.ToString().Length);
-            int maxFailedWidth = orderedResults.Max(r => r.FailedCount.ToString().Length);
+            // 动态线长：核心列宽 + 分隔符(15) + 路径宽度，且不超过窗口宽度
+            int totalLineLength = Math.Min(
+                wKey + wSchema + wSuccess + wFailed + wTime + 15 + wPath,
+                Console.WindowWidth - 1
+            );
+            string lineSep = new string('=', totalLineLength);
+
+            Console.WriteLine(lineSep);
+
+            Console.ForegroundColor = ConsoleColor.DarkGray;
+            // 精准对齐补偿: 汉字占2格宽，Length算1，须减去汉字个数
+            Console.WriteLine(
+                $"{"客户端".PadRight(wKey - 3)} │ {"版本".PadRight(wSchema - 2)} │ {"成功".PadLeft(wSuccess - 2)} │ {"失败".PadLeft(wFailed - 2)} │ {"耗时".PadLeft(wTime - 2)} │ 输出目录"
+            );
+            Console.WriteLine(lineSep);
 
             foreach (var r in orderedResults)
             {
-                // 智能格式化：每一列都根据该列的最长值来对齐
-                string keyPart = $"[{r.ClientKey}]".PadRight(maxKeyWidth);
-                string schemaPart = r.SchemaVersion.PadRight(maxSchemaWidth);
-                string successPart = r.SuccessCount.ToString().PadLeft(maxSuccessWidth);
-                string failedPart = r.FailedCount.ToString().PadLeft(maxFailedWidth);
-                string timePart = r.ElapsedSeconds.ToString("F2").PadLeft(6) + "s";
-                string pathPart = r.OutputDir;
+                Console.ResetColor();
+                Console.Write($"{r.ClientKey}".PadRight(wKey) + " │ ");
+                Console.Write(r.SchemaVersion.PadRight(wSchema) + " │ ");
+                Console.Write(r.SuccessCount.ToString().PadLeft(wSuccess) + " │ ");
 
-                Console.ForegroundColor = ConsoleColor.Green;
-                Console.WriteLine(
-                    $"{keyPart} ✓ {schemaPart} | 成功: {successPart} | 失败: {failedPart} | {timePart} | {pathPart}"
-                );
+                if (r.FailedCount > 0)
+                    Console.ForegroundColor = ConsoleColor.Red;
+                else
+                    Console.ResetColor();
+                Console.Write(r.FailedCount.ToString().PadLeft(wFailed) + " │ ");
+
+                Console.ResetColor();
+                Console.Write((r.ElapsedSeconds.ToString("F2") + "s").PadLeft(wTime) + " │ ");
+
+                Console.ForegroundColor = ConsoleColor.DarkGray;
+                Console.WriteLine(r.OutputDir);
             }
 
             Console.ResetColor();
-            Console.WriteLine(new string('=', 64));
+            Console.WriteLine(lineSep);
+            Console.ForegroundColor = ConsoleColor.Green;
             Console.WriteLine(
-                $"所有客户端处理完毕 (总耗时: {totalStopwatch.Elapsed.TotalSeconds:F2}s)"
+                $"完成 | 总计: {orderedResults.Count} 个客户端 | 总耗时: {totalStopwatch.Elapsed.TotalSeconds:F2}s"
             );
-            Console.WriteLine(new string('=', 64));
+            Console.ResetColor();
+            Console.WriteLine(lineSep);
         }
     }
 
@@ -399,6 +418,7 @@ class Program
             object consoleLock = new object();
 
             LogDetail($"表导出并行数: {maxSheetParallelism}");
+            LogStatus($"准备解包 | 客户端: {clientKey}", ConsoleColor.Cyan);
 
             Parallel.ForEach(
                 sheetNames,
@@ -427,7 +447,7 @@ class Program
 
             stopwatch.Stop();
             LogStatus(
-                $"✓ {schemaVersion.PadLeft(6)} | 成功: {successCount} | 失败: {failedSheets.Count} | {stopwatch.Elapsed.TotalSeconds:F2}s",
+                $"✓ 解包完成 | 成功: {successCount} | 失败: {failedSheets.Count} | 耗时: {stopwatch.Elapsed.TotalSeconds:F2}s",
                 ConsoleColor.Green
             );
 
