@@ -29,11 +29,11 @@ cn:
   outputDir: "./rawexd/chs"
 
 ko:
-  path: "D:/game/FFXIV_KR"
+  path: "D:/game/FFXIV_KO"
   outputDir: "./rawexd/ko"
   # schemaVersion: "latest"
 
 tc:
-  path: "D:/game/FFXIV_TW"
+  path: "D:/game/FFXIV_TC"
   outputDir: "./rawexd/tc"
   # schemaVersion: "latest"

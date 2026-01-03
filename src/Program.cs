@@ -88,8 +88,10 @@ class Program
 
         // 获取客户端并行度配置 (建议: 默认不要超过核心数的 1/4)
         // 获取表导出并行度配置 (默认: CPU核心数)
-        int maxSheetParallelism = config.MaxSheetParallelism ?? Environment.ProcessorCount;
-        maxSheetParallelism = Math.Max(1, maxSheetParallelism);
+        // 获取表导出并行度配置 (默认: CPU核心数, 但上限设为 32 以保护 I/O)
+        int maxSheetParallelism =
+            config.MaxSheetParallelism ?? Math.Min(Environment.ProcessorCount, 32);
+        maxSheetParallelism = Math.Max(1, Math.Min(maxSheetParallelism, 128)); // 强制物理上限 128
 
         Console.ForegroundColor = ConsoleColor.Cyan;
         Console.WriteLine($"\n[性能配置] 表导出并行数: {maxSheetParallelism}");
