@@ -46,15 +46,14 @@ artifacts/
 TestResult.xml
 nunit-*.xml
 
+# 项目特定：配置文件
+config.yml
+publish/
+dist/
+
 # 项目特定：导出的 CSV 文件（通常不需要提交）
 rawexd/
 *.csv
-
-# 项目特定：参考源码目录（仅用于开发参考）
-# SaintCoinach/
-
-# 项目特定：Schema 定义（如果是从外部获取的）
-# EXDSchema/
 
 # Windows 系统文件
 Thumbs.db

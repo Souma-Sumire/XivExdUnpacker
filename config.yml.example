@@ -1,25 +1,39 @@
-global:
-  path: "C:/Program Files (x86)/SquareEnix/FINAL FANTASY XIV - A Realm Reborn/game/sqpack"
-  outputDir: "./rawexd"
-  schemaVersion: "latest"
+# [全局] 所有客户端导出前是否清空输出目录,若不设置则智能判断(全部导出清空,单个导出不清空)
+clearOutputDir: false
 
-clients:
-  en:
-    outputDir: "./rawexd/en"
-  ja:
-    outputDir: "./rawexd/ja"
-  de:
-    outputDir: "./rawexd/de"
-  fr:
-    outputDir: "./rawexd/fr"
-  cn:
-    path: "D:/game/FFXIV/game/sqpack"
-    outputDir: "./rawexd/chs"
-  ko:
-    path: "D:/game/FFXIV_KR/game/sqpack"
-    outputDir: "./rawexd/ko"
-    # schemaVersion: "latest"
-  tc:
-    path: "D:/game/FFXIV_TW/game/sqpack"
-    outputDir: "./rawexd/tc"
-    # schemaVersion: "latest"
+# [性能] 同时处理的客户端数量,默认为选中的客户端总数(即全部并行)
+# 如果硬件资源有限,可以设置为较小的值,例如 2 表示同时只处理 2 个客户端
+# maxClientParallelism: 2
+
+# [性能] 每个客户端内部导出表的并行数,默认为 CPU 核心数
+# 如果需要限制 CPU 使用率,可以设置为较小的值
+# maxSheetParallelism: 4
+
+# [国际服专用] 游戏路径 (en, ja, de, fr)
+globalGamePath: "C:/Program Files (x86)/SquareEnix/FINAL FANTASY XIV - A Realm Reborn"
+
+# [国际服专用] 指定 Schema 版本,一般来说国际服默认用最新版即可
+# globalSchemaVersion: "latest"
+
+en:
+  outputDir: "./rawexd/en"
+ja:
+  outputDir: "./rawexd/ja"
+de:
+  outputDir: "./rawexd/de"
+fr:
+  outputDir: "./rawexd/fr"
+
+cn:
+  path: "C:/Program Files (x86)/上海数龙科技有限公司/最终幻想XIV"
+  outputDir: "./rawexd/chs"
+
+ko:
+  path: "D:/game/FFXIV_KR"
+  outputDir: "./rawexd/ko"
+  # schemaVersion: "latest"
+
+tc:
+  path: "D:/game/FFXIV_TW"
+  outputDir: "./rawexd/tc"
+  # schemaVersion: "latest"
