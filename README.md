@@ -28,5 +28,29 @@ git submodule update --remote
 ### 运行
 
 ```bash
-dotnet run
+# 显示帮助信息
+dotnet run -- --help
+
+# 导出中文的所有表 (默认解码字符串)
+dotnet run -- --language cn
+
+# 导出英文和日文的 Action 和 Item 表
+dotnet run -- --language en ja --sheets Action Item
+
+# 导出所有语言，保留原始数据，清空输出目录
+dotnet run -- --language all --hexcode --clear
+
+# 使用简写，导出中文，清空输出目录，使用原始 HEX
+dotnet run -- -l cn -c -x
 ```
+
+### 命令行参数
+
+| 参数 | 简写 | 说明 | 默认值 |
+| ---- | ---- | ---- | ------ |
+| `--language` | `-l` | 指定要导出的语言 (必需) | - |
+| `--sheets` | `-s` | 指定要导出的表名 | 全部 |
+| `--hexcode` | `-x` | 保留原始数据 | false |
+| `--clear` | `-c` | 导出前清空输出目录 | false |
+| `--skip-offset` | - | 跳过 CSV 的 offset 行 | false |
+| `--help` | `-h` | 显示帮助信息 | - |

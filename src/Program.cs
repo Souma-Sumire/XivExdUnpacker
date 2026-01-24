@@ -6,7 +6,6 @@ using Lumina.Data;
 using XivExdUnpacker.Core;
 using XivExdUnpacker.Models;
 using XivExdUnpacker.Services;
-using XivExdUnpacker.UI;
 
 namespace XivExdUnpacker;
 
@@ -39,9 +38,21 @@ class Program
     static void Main(string[] args)
     {
         Console.OutputEncoding = Encoding.UTF8;
-        Console.CursorVisible = false;
-        Console.ForegroundColor = ConsoleColor.Cyan;
-        Console.ResetColor();
+
+        var parsedArgs = ParseCommandLineArgs(args);
+
+        if (parsedArgs.ShowHelp || args.Length == 0)
+        {
+            ShowHelp();
+            return;
+        }
+
+        if (parsedArgs.Languages == null || parsedArgs.Languages.Count == 0)
+        {
+            Console.WriteLine("错误: 请指定要导出的语言 (使用 --language 或 -l)");
+            Console.WriteLine("使用 --help 查看帮助信息");
+            return;
+        }
 
         var configService = new ConfigService();
         var config = configService.LoadConfig();
@@ -52,70 +63,43 @@ class Program
             return;
         }
 
-        List<string>? selectedKeys;
-        List<string> filters = new List<string>();
+        List<string> selectedKeys;
+        List<string> filters = parsedArgs.Sheets ?? new List<string>();
 
-        // 准备菜单选项
-        var menuOptions = config
-            .GetClients()
-            .Select(kvp =>
-            {
-                var key = kvp.Key;
-                var client = kvp.Value;
-                var internationalKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-                {
-                    "en",
-                    "ja",
-                    "de",
-                    "fr",
-                };
-                string gamePath =
-                    client.Path
-                    ?? (internationalKeys.Contains(key) ? config.GlobalGamePath : "")
-                    ?? "未指定";
-                return (key, gamePath);
-            })
-            .ToList();
-
-        // 交互模式
-        selectedKeys = Menu.ShowInteractiveMenu(menuOptions);
-
-        if (selectedKeys == null || selectedKeys.Count == 0)
+        if (parsedArgs.Languages.Contains("all", StringComparer.OrdinalIgnoreCase))
         {
-            Console.WriteLine("任务已取消或未选择任何客户端。");
-            Console.CursorVisible = true;
-            return;
+            selectedKeys = config.GetClients().Keys.ToList();
         }
+        else
+        {
+            selectedKeys = parsedArgs
+                .Languages.Where(c => config.GetClients().ContainsKey(c))
+                .ToList();
 
-        // 询问过滤器
-        Console.ForegroundColor = ConsoleColor.Yellow;
-        Console.WriteLine("表名过滤 (例如: Action Item / 直接回车导出全部):");
-        Console.ResetColor();
-        Console.Write("> ");
-        string input = Console.ReadLine() ?? "";
-        filters = input
-            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
+            if (selectedKeys.Count == 0)
+            {
+                Console.WriteLine(
+                    $"错误: 未找到指定的语言: {string.Join(", ", parsedArgs.Languages)}"
+                );
+                Console.WriteLine($"可用的语言: {string.Join(", ", config.GetClients().Keys)}");
+                return;
+            }
+        }
 
         Console.CursorVisible = true;
 
-        // 并行处理多个客户端
         var totalStopwatch = Stopwatch.StartNew();
         var clientResults = new ConcurrentBag<(string key, ClientExportResult result)>();
         object globalConsoleLock = new object();
 
-        // 资源缓存池
         var schemaCache = new ConcurrentDictionary<string, Dictionary<string, ExdSchema>>(
             StringComparer.OrdinalIgnoreCase
         );
-        // GameData 实例缓存，按路径区分。Key: 路径 | Value: GameData 实例
         var gameDataPool = new Dictionary<string, GameData>(StringComparer.OrdinalIgnoreCase);
 
-        // 获取表导出并行度配置 (默认: CPU核心数, 但上限设为 32 以保护 I/O)
         int maxSheetParallelism =
             config.MaxSheetParallelism ?? Math.Min(Environment.ProcessorCount, 32);
-        maxSheetParallelism = Math.Max(1, Math.Min(maxSheetParallelism, 128)); // 强制物理上限 128
+        maxSheetParallelism = Math.Max(1, Math.Min(maxSheetParallelism, 128));
 
         Console.ForegroundColor = ConsoleColor.Cyan;
         Console.ResetColor();
@@ -129,20 +113,19 @@ class Program
                 globalConsoleLock,
                 maxSheetParallelism,
                 schemaCache,
-                gameDataPool
+                gameDataPool,
+                parsedArgs.HexCode,
+                parsedArgs.Clear,
+                parsedArgs.SkipOffset
             );
             clientResults.Add((clientKey, result));
 
-            // 重要：在处理完一个客户端后，手动触发内存回收
-            // 释放上一轮由于海量字符串分配产生的堆压力
             GC.Collect();
             GC.WaitForPendingFinalizers();
         }
 
         totalStopwatch.Stop();
 
-        // --- 智能汇总表输出 ---
-        // 按照用户选择的顺序排列结果
         var orderedResults = selectedKeys
             .Select(k => clientResults.FirstOrDefault(r => r.key == k).result)
             .Where(r => r != null)
@@ -150,7 +133,6 @@ class Program
 
         if (orderedResults.Count > 0)
         {
-            // 动态计算各列所需的最大宽度 (最小宽度保证)
             int wKey = Math.Max(10, orderedResults.Max(r => $"[{r.ClientKey}]".Length));
             int wSchema = Math.Max(10, orderedResults.Max(r => r.SchemaVersion.Length));
             int wSuccess = 8;
@@ -158,7 +140,6 @@ class Program
             int wTime = 10;
             int wPath = orderedResults.Max(r => r.OutputDir.Length);
 
-            // 动态线长：核心列宽 + 分隔符(15) + 路径宽度，且不超过窗口宽度
             int totalLineLength = Math.Min(
                 wKey + wSchema + wSuccess + wFailed + wTime + 15 + wPath,
                 Console.WindowWidth - 1
@@ -168,7 +149,6 @@ class Program
             Console.WriteLine(lineSep);
 
             Console.ForegroundColor = ConsoleColor.DarkGray;
-            // 精准对齐补偿: 汉字占2格宽，Length算1，须减去汉字个数
             Console.WriteLine(
                 $"{"客户端".PadRight(wKey - 3)} │ {"版本".PadRight(wSchema - 2)} │ {"成功".PadLeft(wSuccess - 2)} │ {"失败".PadLeft(wFailed - 2)} │ {"耗时".PadLeft(wTime - 2)} │ 输出目录"
             );
@@ -212,13 +192,15 @@ class Program
         object globalConsoleLock,
         int maxSheetParallelism,
         ConcurrentDictionary<string, Dictionary<string, ExdSchema>> schemaCache,
-        Dictionary<string, GameData> gameDataPool
+        Dictionary<string, GameData> gameDataPool,
+        bool useHexcode,
+        bool clear,
+        bool skipOffset
     )
     {
         var logBuffer = new System.Text.StringBuilder();
         var startTime = DateTime.Now;
 
-        // 简洁的状态日志,只在关键时刻输出
         void LogStatus(string status, ConsoleColor color = ConsoleColor.White)
         {
             lock (globalConsoleLock)
@@ -229,7 +211,6 @@ class Program
             }
         }
 
-        // 详细日志缓冲到 StringBuilder,最后一次性输出
         void LogDetail(string message)
         {
             logBuffer.AppendLine($"  {message}");
@@ -237,7 +218,6 @@ class Program
 
         config.GetClients().TryGetValue(clientKey, out var client);
 
-        // 定义国际服客户端 (共用 Global Path)
         var internationalKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "en",
@@ -250,12 +230,10 @@ class Program
         string? gamePath;
         if (isInternational)
         {
-            // 国际服: 强制使用 Global 配置
             gamePath = config.GlobalGamePath;
         }
         else
         {
-            // 区域服: 强制使用 Client 配置
             gamePath = client?.Path;
         }
 
@@ -265,7 +243,7 @@ class Program
             LogStatus("⚠ 路径未配置,尝试自动检测...", ConsoleColor.Yellow);
 
             var detector = new GamePathDetector();
-            var detectedPath = detector.Detect(isInternational); // 传入客户端类型
+            var detectedPath = detector.Detect(isInternational);
 
             if (!string.IsNullOrEmpty(detectedPath))
             {
@@ -285,7 +263,6 @@ class Program
             }
         }
 
-        // 路径补全逻辑：如果给的是根目录，自动补全到 sqpack
         if (!string.IsNullOrEmpty(gamePath) && Directory.Exists(gamePath))
         {
             var combinedPath = Path.Combine(gamePath, "game", "sqpack");
@@ -306,14 +283,12 @@ class Program
                 ElapsedSeconds = 0,
             };
         }
-        // 只有在此时才确定该客户端需要的 Schema 版本
         string schemaVersion;
         if (isInternational)
             schemaVersion = client?.SchemaVersion ?? config.GlobalSchemaVersion ?? "latest";
         else
             schemaVersion = client?.SchemaVersion ?? "latest";
 
-        // 从缓存中获取，如果没有则加载并存入缓存
         var schemas = schemaCache.GetOrAdd(
             schemaVersion,
             version =>
@@ -342,7 +317,6 @@ class Program
 
         Directory.CreateDirectory(outputDir);
 
-        // 在 try 外部声明,以便 finally 块访问
         var failedSheets = new ConcurrentBag<(string name, string error)>();
         int successCount = 0;
 
@@ -359,11 +333,9 @@ class Program
                 gameDataPool[gamePath] = lumina;
             }
 
-            // 1. 获取所有表名并过滤
             var allSheetNames = lumina.Excel.SheetNames.ToList();
             var sheetNames = new List<string>(allSheetNames);
 
-            // 过滤逻辑: 应用交互式/命令行 Include (白名单)
             if (cmdFilters != null && cmdFilters.Count > 0)
             {
                 sheetNames = sheetNames
@@ -373,24 +345,8 @@ class Program
                     .ToList();
             }
 
-            // 清空策略: 三态逻辑 (True=强制清空, False=强制保留, Null=智能判断)
-            bool shouldClear;
-            string clearStrategySource;
-
-            if (config.ClearOutputDir.HasValue)
-            {
-                shouldClear = config.ClearOutputDir.Value;
-                clearStrategySource = shouldClear ? "[配置强制清空]" : "[配置强制保留]";
-            }
-            else
-            {
-                // 智能模式: 如果没有过滤器(全量)则清空，有过滤器(部分)则保留
-                bool isPartialExport = cmdFilters != null && cmdFilters.Count > 0;
-                shouldClear = !isPartialExport;
-                clearStrategySource = isPartialExport
-                    ? "[智能保留 (部分导出)]"
-                    : "[智能清空 (全量导出)]";
-            }
+            bool shouldClear = clear;
+            string clearStrategySource = clear ? "[命令行 --clear]" : "[保留现有文件]";
 
             LogDetail($"清空策略: {(shouldClear ? "是" : "否")} {clearStrategySource}");
             LogDetail($"待导出表数量: {sheetNames.Count} (总计: {allSheetNames.Count})");
@@ -402,7 +358,6 @@ class Program
                 bool clearSuccess = ClearDirectory(outputDir, globalConsoleLock);
                 if (!clearSuccess)
                 {
-                    // 用户取消清空,跳过此客户端
                     return new ClientExportResult
                     {
                         SuccessCount = 0,
@@ -412,7 +367,8 @@ class Program
                 }
             }
 
-            var exporter = new ExdExporter();
+            bool includeOffset = !skipOffset;
+            var exporter = new ExdExporter(useHexcode, includeOffset);
 
             int schemaCount = 0;
             object consoleLock = new object();
@@ -458,7 +414,6 @@ class Program
                     LogDetail($"  - {name}: {error}");
             }
 
-            // 如果使用了自动检测的路径且导出成功,自动保存到配置
             if (successCount > 0 && isDetectedPath)
             {
                 try
@@ -471,7 +426,6 @@ class Program
                     }
                     else
                     {
-                        // 更新对应的区域服配置
                         if (clientKey.Equals("cn", StringComparison.OrdinalIgnoreCase))
                         {
                             config.Cn ??= new ClientConfig();
@@ -517,7 +471,6 @@ class Program
         }
         finally
         {
-            // 只有在【有失败】或【路径是探测出来的】时候才显示这个详细信息块
             bool hasSignificantInfo = failedSheets.Count > 0 || isDetectedPath;
 
             if (hasSignificantInfo && logBuffer.Length > 0)
@@ -544,20 +497,17 @@ class Program
             var allFiles = dir.GetFiles("*", SearchOption.AllDirectories).ToList();
             if (allFiles.Count == 0)
             {
-                // 空目录,直接清空
                 foreach (var subDir in dir.GetDirectories())
                     subDir.Delete(true);
                 return true;
             }
 
-            // 检查是否只有 .csv 文件
             var nonCsvFiles = allFiles
                 .Where(f => !f.Extension.Equals(".csv", StringComparison.OrdinalIgnoreCase))
                 .ToList();
 
             if (nonCsvFiles.Count == 0)
             {
-                // 只有 CSV 文件,安全删除
                 foreach (var file in allFiles)
                     file.Delete();
                 foreach (var subDir in dir.GetDirectories())
@@ -566,7 +516,6 @@ class Program
             }
             else
             {
-                // 有非 CSV 文件,需要用户确认
                 lock (consoleLock)
                 {
                     Console.ForegroundColor = ConsoleColor.Yellow;
@@ -619,5 +568,123 @@ class Program
             }
             return false;
         }
+    }
+
+    record CommandLineArgs
+    {
+        public List<string>? Languages { get; init; }
+        public List<string>? Sheets { get; init; }
+        public bool HexCode { get; init; }
+        public bool Clear { get; init; }
+        public bool SkipOffset { get; init; }
+        public bool ShowHelp { get; init; }
+    }
+
+    static CommandLineArgs ParseCommandLineArgs(string[] args)
+    {
+        var languages = new List<string>();
+        var sheets = new List<string>();
+        bool hexCode = false;
+        bool clear = false;
+        bool skipOffset = false;
+        bool showHelp = false;
+
+        for (int i = 0; i < args.Length; i++)
+        {
+            var arg = args[i];
+
+            switch (arg.ToLower())
+            {
+                case "--help":
+                case "-h":
+                case "/?":
+                    showHelp = true;
+                    break;
+
+                case "--language":
+                case "-l":
+                    i++;
+                    while (i < args.Length && !args[i].StartsWith("-"))
+                    {
+                        languages.Add(args[i]);
+                        i++;
+                    }
+                    i--;
+                    break;
+
+                case "--sheets":
+                case "-s":
+                    i++;
+                    while (i < args.Length && !args[i].StartsWith("-"))
+                    {
+                        sheets.Add(args[i]);
+                        i++;
+                    }
+                    i--;
+                    break;
+
+                case "--hexcode":
+                case "-x":
+                    hexCode = true;
+                    break;
+
+                case "--clear":
+                case "-c":
+                    clear = true;
+                    break;
+
+                case "--skip-offset":
+                    skipOffset = true;
+                    break;
+            }
+        }
+
+        return new CommandLineArgs
+        {
+            Languages = languages.Count > 0 ? languages : null,
+            Sheets = sheets.Count > 0 ? sheets : null,
+            HexCode = hexCode,
+            Clear = clear,
+            SkipOffset = skipOffset,
+            ShowHelp = showHelp,
+        };
+    }
+
+    static void ShowHelp()
+    {
+        Console.WriteLine("FFXIV EXD 数据解包工具");
+        Console.WriteLine();
+        Console.WriteLine("用法:");
+        Console.WriteLine("  XivExdUnpacker --language <语言...> [选项]");
+        Console.WriteLine();
+        Console.WriteLine("必需参数:");
+        Console.WriteLine(
+            "  --language, -l <语言...>     指定要导出的语言 (en ja de fr cn ko tc all)"
+        );
+        Console.WriteLine();
+        Console.WriteLine("可选参数:");
+        Console.WriteLine("  --sheets, -s <表名...>       指定要导出的表名 (默认: 全部)");
+        Console.WriteLine(
+            "  --hexcode, -x                保留原始数据 (默认: 解码字符串为人类可读格式)"
+        );
+        Console.WriteLine("  --clear, -c                  导出前清空输出目录");
+        Console.WriteLine("  --skip-offset                跳过 CSV 的 offset 行");
+        Console.WriteLine("  --help, -h                   显示此帮助信息");
+        Console.WriteLine();
+        Console.WriteLine("示例:");
+        Console.WriteLine("  # 导出中文的所有表 (默认解码字符串)");
+        Console.WriteLine("  XivExdUnpacker --language cn");
+        Console.WriteLine();
+        Console.WriteLine("  # 导出英文的所有表 (保留原始数据)");
+        Console.WriteLine("  XivExdUnpacker --language en --hexcode");
+        Console.WriteLine();
+        Console.WriteLine("  # 导出英文和日文的 Action 和 Item 表");
+        Console.WriteLine("  XivExdUnpacker --language en ja --sheets Action Item");
+        Console.WriteLine();
+        Console.WriteLine("  # 导出所有语言，清空输出目录，跳过 offset 行");
+        Console.WriteLine("  XivExdUnpacker --language all --clear --skip-offset");
+        Console.WriteLine();
+        Console.WriteLine("  # 使用简写");
+        Console.WriteLine("  XivExdUnpacker -l cn -s Addon Quest -x -c");
     }
 }

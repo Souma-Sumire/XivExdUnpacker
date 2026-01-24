@@ -20,8 +20,6 @@ public class GamePathDetector
     {
         if (isInternational)
         {
-            // 只检测国际服路径
-            // 1. 尝试从注册表读取
             string[] registryPaths =
             {
                 @"HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\SquareEnix\Final Fantasy XIV - A Realm Reborn",
@@ -37,7 +35,6 @@ public class GamePathDetector
                 }
             }
 
-            // 2. 尝试默认路径
             var defaultPath =
                 "C:/Program Files (x86)/SquareEnix/FINAL FANTASY XIV - A Realm Reborn";
             if (Directory.Exists(Path.Combine(defaultPath, "game", "sqpack")))
@@ -45,8 +42,6 @@ public class GamePathDetector
         }
         else
         {
-            // 只检测区域服路径 (国服/韩服/台服)
-            // 国服路径 (盛趣/数龙)
             var cnPath =
                 Registry.GetValue(
                     @"HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\最终幻想XIV",
@@ -65,7 +60,6 @@ public class GamePathDetector
                 }
             }
 
-            // 国服默认路径
             var cnDefaultPath = "C:/Program Files (x86)/上海数龙科技有限公司/最终幻想XIV";
             if (Directory.Exists(Path.Combine(cnDefaultPath, "game", "sqpack")))
                 return cnDefaultPath;
@@ -82,7 +76,7 @@ public class GamePathDetector
 
         string[] paths =
         {
-            Path.Combine(home, ".xlcore", "ffxiv"), // XIVLauncher Core
+            Path.Combine(home, ".xlcore", "ffxiv"),
             Path.Combine(
                 home,
                 ".steam",
@@ -90,7 +84,7 @@ public class GamePathDetector
                 "steamapps",
                 "common",
                 "FINAL FANTASY XIV Online"
-            ), // Standard Steam
+            ),
             Path.Combine(
                 home,
                 ".local",
@@ -99,7 +93,7 @@ public class GamePathDetector
                 "steamapps",
                 "common",
                 "FINAL FANTASY XIV Online"
-            ), // Steam Deck / Distro specific
+            ),
         };
 
         foreach (var path in paths)
@@ -116,8 +110,8 @@ public class GamePathDetector
 
         string[] paths =
         {
-            "/Applications/FINAL FANTASY XIV ONLINE.app/Contents/SharedSupport/finalfantasyxiv", // Official Client
-            Path.Combine(home, "Library", "Application Support", "XIV on Mac", "ffxiv"), // XIV on Mac
+            "/Applications/FINAL FANTASY XIV ONLINE.app/Contents/SharedSupport/finalfantasyxiv",
+            Path.Combine(home, "Library", "Application Support", "XIV on Mac", "ffxiv"),
         };
 
         foreach (var path in paths)

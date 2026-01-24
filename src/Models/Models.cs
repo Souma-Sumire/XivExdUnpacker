@@ -4,17 +4,13 @@ namespace XivExdUnpacker.Models;
 
 public class AppConfig
 {
-    // 全局设置
     public string? GlobalGamePath { get; set; }
     public string? GlobalSchemaVersion { get; set; }
-    public bool? ClearOutputDir { get; set; }
     public List<string>? GlobalExclude { get; set; }
 
-    // 性能设置
-    public int? MaxClientParallelism { get; set; } // 同时处理的客户端数量 (默认: 客户端数量)
-    public int? MaxSheetParallelism { get; set; } // 每个客户端内部导出表的并行数 (默认: CPU核心数)
+    public int? MaxClientParallelism { get; set; }
+    public int? MaxSheetParallelism { get; set; }
 
-    // 客户端配置 (扁平化)
     public ClientConfig? En { get; set; }
     public ClientConfig? Ja { get; set; }
     public ClientConfig? De { get; set; }
@@ -23,7 +19,6 @@ public class AppConfig
     public ClientConfig? Ko { get; set; }
     public ClientConfig? Tc { get; set; }
 
-    // 辅助方法: 生成字典以便遍历
     public Dictionary<string, ClientConfig> GetClients()
     {
         var dict = new Dictionary<string, ClientConfig>(StringComparer.OrdinalIgnoreCase);

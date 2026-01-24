@@ -7,24 +7,33 @@ using Lumina.Data.Files;
 using Lumina.Data.Files.Excel;
 using Lumina.Data.Structs.Excel;
 using SaintCoinach.Text;
+using XivExdUnpacker.Decoders;
 using XivExdUnpacker.Models;
 
 namespace XivExdUnpacker.Core;
 
 public class ExdExporter
 {
-    private const int BufferSize = 65536; // 64KB 缓冲区
+    private const int BufferSize = 131072;
+    private readonly bool _useHexcode;
+    private readonly bool _includeOffset;
 
-    // 使用 ThreadLocal 缓存解码器，既保证了线程安全，又避免了每个单元格都 new 的海量分配
-    private static readonly ThreadLocal<XivStringDecoder> _threadDecoder = new(() =>
+    private static readonly ThreadLocal<XivStringDecoder> _threadHexDecoder = new(() =>
         new XivStringDecoder()
     );
+    private static readonly ThreadLocal<CompleteReadableDecoder> _threadReadableDecoder = new(() =>
+        new CompleteReadableDecoder()
+    );
 
-    // 全局静态目录缓存, 避免多个语言重复调用 Directory.Exists/CreateDirectory
     private static readonly ConcurrentDictionary<string, byte> _createdDirs = new();
 
-    // 静态编码实例
-    private static readonly UTF8Encoding _utf8WithBom = new(true);
+    private static readonly Encoding _utf8WithBom = Encoding.UTF8;
+
+    public ExdExporter(bool useHexcode = true, bool includeOffset = true)
+    {
+        _useHexcode = useHexcode;
+        _includeOffset = includeOffset;
+    }
 
     public void ExportSheet(
         GameData lumina,
@@ -69,7 +78,7 @@ public class ExdExporter
             _createdDirs.TryAdd(outputFileDir, 0);
         }
 
-        using var writer = new StreamWriter(outputPath, false, _utf8WithBom, 65536);
+        using var writer = new StreamWriter(outputPath, false, _utf8WithBom, BufferSize);
 
         var indexedColumns = columns
             .Select((c, i) => new { Definition = c, OriginalIndex = i })
@@ -115,10 +124,9 @@ public class ExdExporter
         var finalColumns = columnInfos.OrderBy(x => x.OriginalIndex).ToList();
         bool isSubrow = header.Variant == ExcelVariant.Subrows;
 
-        // Header Rows
         var keyIndexRow = new List<string> { "key" };
         for (int i = 0; i < finalColumns.Count; i++)
-            keyIndexRow.Add(i.ToString());
+            keyIndexRow.Add(i.ToString(System.Globalization.CultureInfo.InvariantCulture));
         writer.WriteLine(string.Join(",", keyIndexRow.Select(EscapeCsv)));
 
         var headerRow = new List<string> { "#" };
@@ -126,12 +134,19 @@ public class ExdExporter
             headerRow.Add(col.IsUnknown ? "" : col.Name);
         writer.WriteLine(string.Join(",", headerRow.Select(EscapeCsv)));
 
-        var offsetRow = new List<string> { "offset" };
-        foreach (var col in finalColumns)
-            offsetRow.Add(col.Definition.Offset.ToString());
-        writer.WriteLine(string.Join(",", offsetRow.Select(EscapeCsv)));
+        if (_includeOffset)
+        {
+            var offsetRow = new List<string> { "offset" };
+            foreach (var col in finalColumns)
+                offsetRow.Add(
+                    col.Definition.Offset.ToString(
+                        System.Globalization.CultureInfo.InvariantCulture
+                    )
+                );
+            writer.WriteLine(string.Join(",", offsetRow.Select(EscapeCsv)));
+        }
 
-        var typeRow = new List<string> { "Int32" };
+        var typeRow = new List<string> { "int32" };
         foreach (var col in finalColumns)
             typeRow.Add(col.Type);
         writer.WriteLine(string.Join(",", typeRow.Select(EscapeCsv)));
@@ -160,8 +175,14 @@ public class ExdExporter
                     );
                     for (ushort subrowId = 0; subrowId < subrowCount; subrowId++)
                     {
-                        // 写入 ID 列
-                        writer.Write(EscapeCsv($"{rowId}.{subrowId}"));
+                        writer.Write(
+                            EscapeCsv(
+                                string.Create(
+                                    System.Globalization.CultureInfo.InvariantCulture,
+                                    $"{rowId}.{subrowId}"
+                                )
+                            )
+                        );
 
                         var subrowDataStart = rowDataStart + subrowId * (header.DataOffset + 2) + 2;
                         var fullRowId = $"{rowId}.{subrowId}";
@@ -184,8 +205,9 @@ public class ExdExporter
                 }
                 else
                 {
-                    // 写入 ID 列
-                    writer.Write(EscapeCsv(rowId.ToString()));
+                    writer.Write(
+                        EscapeCsv(rowId.ToString(System.Globalization.CultureInfo.InvariantCulture))
+                    );
 
                     foreach (var col in finalColumns)
                     {
@@ -211,7 +233,6 @@ public class ExdExporter
         if (type == ExcelColumnDataType.String)
         {
             writer.Write('"');
-            // 手动转义，不使用 Replace 分配新字符串
             foreach (char c in value)
             {
                 if (c == '"')
@@ -223,7 +244,6 @@ public class ExdExporter
         }
         else
         {
-            // 对于数值类型，EscapeCsv 是安全的
             writer.Write(EscapeCsv(value));
         }
     }
@@ -307,18 +327,17 @@ public class ExdExporter
                     .ToString(),
                 ExcelColumnDataType.UInt32 => BinaryPrimitives
                     .ReadUInt32BigEndian(span.Slice(offset, 4))
-                    .ToString(),
+                    .ToString(System.Globalization.CultureInfo.InvariantCulture),
                 ExcelColumnDataType.Float32 => BitConverter
                     .Int32BitsToSingle(BinaryPrimitives.ReadInt32BigEndian(span.Slice(offset, 4)))
-                    .ToString(),
+                    .ToString(System.Globalization.CultureInfo.InvariantCulture),
                 ExcelColumnDataType.Int64 => BinaryPrimitives
                     .ReadInt64BigEndian(span.Slice(offset, 8))
-                    .ToString(),
+                    .ToString(System.Globalization.CultureInfo.InvariantCulture),
                 ExcelColumnDataType.UInt64 => BinaryPrimitives
                     .ReadUInt64BigEndian(span.Slice(offset, 8))
-                    .ToString(),
+                    .ToString(System.Globalization.CultureInfo.InvariantCulture),
 
-                // Packed bool 类型 (位域)
                 >= ExcelColumnDataType.PackedBool0 and <= ExcelColumnDataType.PackedBool7 => (
                     (span[offset] & (1 << (column.Type - ExcelColumnDataType.PackedBool0))) != 0
                 ).ToString(),
@@ -328,11 +347,9 @@ public class ExdExporter
         }
         catch (Exception ex)
         {
-            // 屏蔽已知存在 Schema 损坏或结构异常的表，避免错误日志刷屏
             if (sheetName == "CustomTalkDefineClient" || sheetName == "QuestDefineClient")
                 return "";
 
-            // 着色打印具体的定位信息
             lock (Console.Out)
             {
                 Console.ForegroundColor = ConsoleColor.Red;
@@ -342,7 +359,6 @@ public class ExdExporter
                     $"读取失败 @ {sheetName} -> 行:{rowId} | 列偏移:0x{column.Offset:X} | 类型:{column.Type} | 实际地址:0x{offset:X}"
                 );
 
-                // 打印失败位置的数据
                 string hexDump;
                 try
                 {
@@ -374,7 +390,11 @@ public class ExdExporter
         while (absoluteOffset + length < data.Length && data[absoluteOffset + length] != 0)
             length++;
         var stringData = data.AsSpan(absoluteOffset, length).ToArray();
-        return _threadDecoder.Value!.Decode(stringData).ToString();
+
+        if (_useHexcode)
+            return _threadHexDecoder.Value!.Decode(stringData).ToString();
+        else
+            return _threadReadableDecoder.Value!.Decode(stringData);
     }
 
     private string EscapeCsv(string value)
@@ -382,10 +402,10 @@ public class ExdExporter
         if (string.IsNullOrEmpty(value))
             return "";
 
-        // 快速扫描：如果没有特殊字符，直接返回原始引用
         bool needsQuotes = false;
-        foreach (char c in value)
+        for (int i = 0; i < value.Length; i++)
         {
+            char c = value[i];
             if (c == ',' || c == '"' || c == '\n' || c == '\r')
             {
                 needsQuotes = true;
@@ -396,7 +416,6 @@ public class ExdExporter
         if (!needsQuotes)
             return value;
 
-        // 只有在确定需要转义时才进行替换和加引号
         return "\"" + value.Replace("\"", "\"\"") + "\"";
     }
 }

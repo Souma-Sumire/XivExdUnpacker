@@ -1,0 +1,65 @@
+﻿#nullable disable
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+
+namespace SaintCoinach.Text.Nodes
+{
+    public class Comparison : INode, IExpressionNode
+    {
+        private readonly INode _Left;
+        private readonly DecodeExpressionType _ComparisonType;
+        private readonly INode _Right;
+
+        TagType INode.Tag
+        {
+            get { return TagType.None; }
+        }
+        NodeFlags INode.Flags
+        {
+            get { return NodeFlags.IsExpression; }
+        }
+        public INode Left
+        {
+            get { return _Left; }
+        }
+        public DecodeExpressionType ComparisonType
+        {
+            get { return _ComparisonType; }
+        }
+        public INode Right
+        {
+            get { return _Right; }
+        }
+
+        public Comparison(DecodeExpressionType comparisonType, INode left, INode right)
+        {
+            _ComparisonType = comparisonType;
+            _Left = left;
+            _Right = right;
+        }
+
+        public override string ToString()
+        {
+            var sb = new StringBuilder();
+            ToString(sb);
+            return sb.ToString();
+        }
+
+        public void ToString(StringBuilder builder)
+        {
+            builder.Append(((byte)ComparisonType).ToString("X2"));
+            if (Left != null)
+                Left.ToString(builder);
+            if (Right != null)
+                Right.ToString(builder);
+        }
+
+        public T Accept<T>(SaintCoinach.Text.Nodes.INodeVisitor<T> visitor)
+        {
+            return visitor.Visit(this);
+        }
+    }
+}

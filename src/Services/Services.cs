@@ -1,3 +1,4 @@
+using System.Text.Json;
 using XivExdUnpacker.Models;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
@@ -50,7 +51,7 @@ public class ConfigService
             var serializer = new SerializerBuilder()
                 .WithNamingConvention(CamelCaseNamingConvention.Instance)
                 .Build();
-            File.WriteAllText(configPath, serializer.Serialize(config));
+            File.WriteAllText(configPath, serializer.Serialize(config), System.Text.Encoding.UTF8);
             Console.WriteLine("配置已成功保存至 config.yml");
         }
         catch (Exception ex)
@@ -62,11 +63,37 @@ public class ConfigService
 
 public class SchemaService
 {
+    private static readonly IDeserializer YamlDeserializer = new DeserializerBuilder()
+        .WithNamingConvention(CamelCaseNamingConvention.Instance)
+        .IgnoreUnmatchedProperties()
+        .Build();
+
     public Dictionary<string, ExdSchema> LoadSchemas(string schemaDir)
     {
+        string version = Path.GetFileName(schemaDir);
+        string cacheDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, ".cache");
+        string cacheFile = Path.Combine(cacheDir, $"schema_{version}.json");
+
+        if (File.Exists(cacheFile))
+        {
+            try
+            {
+                using var fs = File.OpenRead(cacheFile);
+                var cached = JsonSerializer.Deserialize<Dictionary<string, ExdSchema>>(fs);
+                if (cached != null)
+                {
+                    Console.WriteLine($"[Schema] 已从缓存加载定义 ({version})");
+                    return cached;
+                }
+            }
+            catch { }
+        }
+
+        Console.WriteLine($"[Schema] 正在解析 YAML 定义，请稍候 ({version})...");
         var schemas = new System.Collections.Concurrent.ConcurrentDictionary<string, ExdSchema>(
             StringComparer.OrdinalIgnoreCase
         );
+
         if (!Directory.Exists(schemaDir))
             return new Dictionary<string, ExdSchema>(StringComparer.OrdinalIgnoreCase);
 
@@ -79,11 +106,8 @@ public class SchemaService
             {
                 try
                 {
-                    var deserializer = new DeserializerBuilder()
-                        .WithNamingConvention(CamelCaseNamingConvention.Instance)
-                        .IgnoreUnmatchedProperties()
-                        .Build();
-                    var schema = deserializer.Deserialize<ExdSchema>(File.ReadAllText(file));
+                    var content = File.ReadAllText(file);
+                    var schema = YamlDeserializer.Deserialize<ExdSchema>(content);
                     if (schema?.Name != null)
                         schemas.TryAdd(schema.Name, schema);
                 }
@@ -91,6 +115,26 @@ public class SchemaService
             }
         );
 
-        return new Dictionary<string, ExdSchema>(schemas, StringComparer.OrdinalIgnoreCase);
+        var result = new Dictionary<string, ExdSchema>(schemas, StringComparer.OrdinalIgnoreCase);
+
+        if (result.Count > 0)
+        {
+            try
+            {
+                if (!Directory.Exists(cacheDir))
+                    Directory.CreateDirectory(cacheDir);
+                string tempFile = cacheFile + ".tmp";
+                using (var fs = File.Create(tempFile))
+                {
+                    JsonSerializer.Serialize(fs, result);
+                }
+                if (File.Exists(cacheFile))
+                    File.Delete(cacheFile);
+                File.Move(tempFile, cacheFile);
+            }
+            catch { }
+        }
+
+        return result;
     }
 }
