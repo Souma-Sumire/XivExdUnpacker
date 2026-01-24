@@ -1,56 +1,58 @@
 # XivExdUnpacker
 
-一个基于 [Lumina](https://github.com/NotAdam/Lumina) 的最终幻想 XIV EXD 数据解包工具，用于平替 `SaintCoinach.Cmd` 的 `rawexd` 功能。
+A Final Fantasy XIV EXD data unpacking tool based on [Lumina](https://github.com/NotAdam/Lumina), intended as a replacement for the `rawexd` functionality of `SaintCoinach.Cmd`.
 
-## 环境要求
+[English](./README.md) | [日本語](./docs/README.ja.md) | [Deutsch](./docs/README.de.md) | [Français](./docs/README.fr.md) | [简体中文](./docs/README.cn.md) | [한국어](./docs/README.ko.md) | [繁體中文](./docs/README.tc.md)
+
+## Requirements
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
-- FFXIV 的本地安装
+- Local installation of FFXIV
 
-## 快速开始
+## Quick Start
 
-### 准备项目
+### Prepare Project
 
 ```bash
-# 克隆项目
+# Clone the repository
 git clone --recursive https://github.com/Souma-Sumire/XivExdUnpacker.git
 cd XivExdUnpacker
-# 初始化子模块
+# Initialize submodules
 git submodule update --init --recursive
-# 更新 Schema 子模块到最新版本
+# Update Schema submodule to latest
 git submodule update --remote
 ```
 
-### 配置
+### Configuration
 
-将 `config.yml.example` 复制为 `config.yml`，并编辑设置各服的 `path` 和 `outputDir`
+Copy `config.yml.example` to `config.yml` and edit the `path` and `outputDir` for each server.
 
-### 运行
+### Run
 
 ```bash
-# 显示帮助信息
+# Show help
 dotnet run -- --help
 
-# 导出中文的所有表 (默认解码字符串)
+# Export all tables for Chinese (default string decoding)
 dotnet run -- --language cn
 
-# 导出英文和日文的 Action 和 Item 表
+# Export Action and Item tables for English and Japanese
 dotnet run -- --language en ja --sheets Action Item
 
-# 导出所有语言，保留原始数据，清空输出目录
+# Export all languages, keep raw data, clear output directory
 dotnet run -- --language all --hexcode --clear
 
-# 使用简写，导出中文，清空输出目录，使用原始 HEX
+# Use short commands: export Chinese, clear output, use raw HEX
 dotnet run -- -l cn -c -x
 ```
 
-### 命令行参数
+### Command Line Arguments
 
-| 参数 | 简写 | 说明 | 默认值 |
+| Argument | Short | Description | Default |
 | ---- | ---- | ---- | ------ |
-| `--language` | `-l` | 指定要导出的语言 (必需) | - |
-| `--sheets` | `-s` | 指定要导出的表名 | 全部 |
-| `--hexcode` | `-x` | 保留原始数据 | false |
-| `--clear` | `-c` | 导出前清空输出目录 | false |
-| `--skip-offset` | - | 跳过 CSV 的 offset 行 | false |
-| `--help` | `-h` | 显示帮助信息 | - |
+| `--language` | `-l` | Specify languages to export (Required) | - |
+| `--sheets` | `-s` | Specify sheet names to export | All |
+| `--hexcode` | `-x` | Keep raw data | false |
+| `--clear` | `-c` | Clear output directory before exporting | false |
+| `--skip-offset` | - | Skip CSV offset rows | false |
+| `--help` | `-h` | Show help information | - |
