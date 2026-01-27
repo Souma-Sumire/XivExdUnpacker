@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using XivExdUnpacker.Models;
 using YamlDotNet.Serialization;
@@ -71,25 +72,33 @@ public class SchemaService
     public Dictionary<string, ExdSchema> LoadSchemas(string schemaDir)
     {
         string version = Path.GetFileName(schemaDir);
-        string cacheDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, ".cache");
-        string cacheFile = Path.Combine(cacheDir, $"schema_{version}.json");
-
-        if (File.Exists(cacheFile))
+        string gitHash = "";
+        try
         {
-            try
+            var gitRoot = Directory.GetParent(schemaDir)?.Parent?.FullName;
+            if (!string.IsNullOrEmpty(gitRoot))
             {
-                using var fs = File.OpenRead(cacheFile);
-                var cached = JsonSerializer.Deserialize<Dictionary<string, ExdSchema>>(fs);
-                if (cached != null)
+                var psi = new ProcessStartInfo("git", "rev-parse --short HEAD")
                 {
-                    Console.WriteLine($"[Schema] 已从缓存加载定义 ({version})");
-                    return cached;
+                    WorkingDirectory = gitRoot,
+                    RedirectStandardOutput = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                };
+                using var p = Process.Start(psi);
+                if (p != null)
+                {
+                    gitHash = p.StandardOutput.ReadToEnd().Trim();
+                    p.WaitForExit(200);
                 }
             }
-            catch { }
         }
+        catch { }
 
-        Console.WriteLine($"[Schema] 正在解析 YAML 定义，请稍候 ({version})...");
+        Console.WriteLine(
+            $"[Schema] 正在解析 YAML 定义，请稍候 ({version})..."
+                + (string.IsNullOrEmpty(gitHash) ? "" : $" [{gitHash}]")
+        );
         var schemas = new System.Collections.Concurrent.ConcurrentDictionary<string, ExdSchema>(
             StringComparer.OrdinalIgnoreCase
         );
@@ -115,26 +124,6 @@ public class SchemaService
             }
         );
 
-        var result = new Dictionary<string, ExdSchema>(schemas, StringComparer.OrdinalIgnoreCase);
-
-        if (result.Count > 0)
-        {
-            try
-            {
-                if (!Directory.Exists(cacheDir))
-                    Directory.CreateDirectory(cacheDir);
-                string tempFile = cacheFile + ".tmp";
-                using (var fs = File.Create(tempFile))
-                {
-                    JsonSerializer.Serialize(fs, result);
-                }
-                if (File.Exists(cacheFile))
-                    File.Delete(cacheFile);
-                File.Move(tempFile, cacheFile);
-            }
-            catch { }
-        }
-
-        return result;
+        return new Dictionary<string, ExdSchema>(schemas, StringComparer.OrdinalIgnoreCase);
     }
 }
