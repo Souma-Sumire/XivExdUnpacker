@@ -146,7 +146,7 @@ public class ExdExporter
             writer.WriteLine(string.Join(",", offsetRow.Select(EscapeCsv)));
         }
 
-        var typeRow = new List<string> { "int32" };
+        var typeRow = new List<string> { "Int32" };
         foreach (var col in finalColumns)
             typeRow.Add(col.Type);
         writer.WriteLine(string.Join(",", typeRow.Select(EscapeCsv)));
