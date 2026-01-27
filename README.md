@@ -4,24 +4,17 @@ A Final Fantasy XIV EXD data unpacking tool based on [Lumina](https://github.com
 
 [English](./README.md) | [日本語](./docs/README.ja.md) | [Deutsch](./docs/README.de.md) | [Français](./docs/README.fr.md) | [简体中文](./docs/README.cn.md) | [한국어](./docs/README.ko.md) | [繁體中文](./docs/README.tc.md)
 
-## Requirements
+## Usage
+
+### Requirements
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
 - Local installation of FFXIV
 
-## Quick Start
+### Installation
 
-### Prepare Project
-
-```bash
-# Clone the repository
-git clone --recursive https://github.com/Souma-Sumire/XivExdUnpacker.git
-cd XivExdUnpacker
-# Initialize submodules
-git submodule update --init --recursive
-# Update Schema submodule to latest
-git submodule update --remote
-```
+1. Download the latest release from [Releases](https://github.com/Souma-Sumire/XivExdUnpacker/releases).
+2. Extract the archive.
 
 ### Configuration
 
@@ -31,19 +24,16 @@ Copy `config.yml.example` to `config.yml` and edit the `path` and `outputDir` fo
 
 ```bash
 # Show help
-dotnet run -- --help
+XivExdUnpacker.exe --help
 
-# Export all tables for Chinese (default string decoding)
-dotnet run -- --language cn
+# Export all tables for Chinese
+XivExdUnpacker.exe --language cn
 
 # Export Action and Item tables for English and Japanese
-dotnet run -- --language en ja --sheets Action Item
+XivExdUnpacker.exe --language en ja --sheets Action Item
 
-# Export all languages, keep raw data, clear output directory
-dotnet run -- --language all --hexcode --clear
-
-# Use short commands: export Chinese, clear output, use raw HEX
-dotnet run -- -l cn -c -x
+# Export all languages, output hexcode, clear output directory before exporting
+XivExdUnpacker.exe --language all --hexcode --clear
 ```
 
 ### Command Line Arguments
@@ -56,3 +46,25 @@ dotnet run -- -l cn -c -x
 | `--clear` | `-c` | Clear output directory before exporting | false |
 | `--skip-offset` | - | Skip CSV offset rows | false |
 | `--help` | `-h` | Show help information | - |
+
+## Development
+
+### Setup
+
+```bash
+# Clone the repository
+git clone --recursive https://github.com/Souma-Sumire/XivExdUnpacker.git
+cd XivExdUnpacker
+# Initialize submodules
+git submodule update --init --recursive
+# Update Schema submodule to latest
+git submodule update --remote
+```
+
+### Build & Run
+
+```bash
+# Show help
+dotnet run -- --help
+# Same as above
+```
