@@ -301,7 +301,20 @@ class Program
                 string.IsNullOrEmpty(schemaVersion)
                 || schemaVersion.Equals("latest", StringComparison.OrdinalIgnoreCase)
             )
-                schemaVersion = detectedVersion ?? "latest";
+            {
+                if (string.IsNullOrEmpty(detectedVersion))
+                {
+                    LogStatus(
+                        "⚠ 未检测到 ffxivgame.ver, 将回退至 'latest' 版本的 Schema。",
+                        ConsoleColor.Yellow
+                    );
+                    schemaVersion = "latest";
+                }
+                else
+                {
+                    schemaVersion = detectedVersion;
+                }
+            }
 
             string finalSchemaDir = "";
             var schemas = schemaCache.GetOrAdd(
