@@ -38,6 +38,11 @@ class Program
 
     static void Main(string[] args)
     {
+        try
+        {
+            Process.GetCurrentProcess().PriorityClass = ProcessPriorityClass.AboveNormal;
+        }
+        catch { }
         Console.OutputEncoding = Encoding.UTF8;
 
         var parsedArgs = ParseCommandLineArgs(args);
