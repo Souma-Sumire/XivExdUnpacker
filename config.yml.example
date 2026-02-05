@@ -9,8 +9,10 @@
 # [国际服专用] 游戏路径 (en, ja, de, fr)
 globalGamePath: "C:/Program Files (x86)/SquareEnix/FINAL FANTASY XIV - A Realm Reborn"
 
-# [国际服专用] 指定 Schema 版本,一般来说国际服默认用最新版即可
-# globalSchemaVersion: "latest"
+# [国际服专用] 指定 Schema 版本
+# 默认不填会自动通过 ffxivgame.ver 检测游戏版本。
+# 如果检测失败，将默认使用 "latest"。
+# globalSchemaVersion: ""
 
 en:
   outputDir: "./rawexd/en"
@@ -28,9 +30,9 @@ cn:
 ko:
   path: "D:/game/FFXIV_KO"
   outputDir: "./rawexd/ko"
-  # schemaVersion: "latest"
+  # schemaVersion: "" # 默认自动检测，检测失败则用 latest
 
 tc:
   path: "D:/game/FFXIV_TC"
   outputDir: "./rawexd/tc"
-  # schemaVersion: "latest"
+  # schemaVersion: "" # 默认自动检测，检测失败则用 latest

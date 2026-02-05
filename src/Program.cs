@@ -7,7 +7,7 @@ using XivExdUnpacker.Core;
 using XivExdUnpacker.Models;
 using XivExdUnpacker.Services;
 
-namespace XivExdUnpacker;
+namespace XivExdUnpacker.src;
 
 class Program
 {
@@ -28,7 +28,8 @@ class Program
     {
         public string ClientKey { get; init; } = "";
         public string LanguageName { get; init; } = "";
-        public string SchemaVersion { get; init; } = "";
+        public string ClientVersion { get; init; } = "";
+        public string ActualSchema { get; init; } = "";
         public string OutputDir { get; init; } = "";
         public int SuccessCount { get; init; }
         public int FailedCount { get; init; }
@@ -64,17 +65,15 @@ class Program
         }
 
         List<string> selectedKeys;
-        List<string> filters = parsedArgs.Sheets ?? new List<string>();
+        List<string> filters = parsedArgs.Sheets ?? [];
 
         if (parsedArgs.Languages.Contains("all", StringComparer.OrdinalIgnoreCase))
         {
-            selectedKeys = config.GetClients().Keys.ToList();
+            selectedKeys = [.. config.GetClients().Keys];
         }
         else
         {
-            selectedKeys = parsedArgs
-                .Languages.Where(c => config.GetClients().ContainsKey(c))
-                .ToList();
+            selectedKeys = [.. parsedArgs.Languages.Where(c => config.GetClients().ContainsKey(c))];
 
             if (selectedKeys.Count == 0)
             {
@@ -90,7 +89,7 @@ class Program
 
         var totalStopwatch = Stopwatch.StartNew();
         var clientResults = new ConcurrentBag<(string key, ClientExportResult result)>();
-        object globalConsoleLock = new object();
+        object globalConsoleLock = new();
 
         var schemaCache = new ConcurrentDictionary<string, Dictionary<string, ExdSchema>>(
             StringComparer.OrdinalIgnoreCase
@@ -98,8 +97,8 @@ class Program
         var gameDataPool = new Dictionary<string, GameData>(StringComparer.OrdinalIgnoreCase);
 
         int maxSheetParallelism =
-            config.MaxSheetParallelism ?? Math.Min(Environment.ProcessorCount, 32);
-        maxSheetParallelism = Math.Max(1, Math.Min(maxSheetParallelism, 128));
+            config.MaxSheetParallelism ?? Math.Clamp(Environment.ProcessorCount, 1, 8);
+        maxSheetParallelism = Math.Clamp(maxSheetParallelism, 1, 128);
 
         Console.ForegroundColor = ConsoleColor.Cyan;
         Console.ResetColor();
@@ -134,23 +133,24 @@ class Program
         if (orderedResults.Count > 0)
         {
             int wKey = Math.Max(10, orderedResults.Max(r => $"[{r.ClientKey}]".Length));
-            int wSchema = Math.Max(10, orderedResults.Max(r => r.SchemaVersion.Length));
+            int wVer = Math.Max(10, orderedResults.Max(r => r.ClientVersion.Length));
+            int wSchema = Math.Max(10, orderedResults.Max(r => r.ActualSchema.Length));
             int wSuccess = 8;
             int wFailed = 8;
             int wTime = 10;
             int wPath = orderedResults.Max(r => r.OutputDir.Length);
 
             int totalLineLength = Math.Min(
-                wKey + wSchema + wSuccess + wFailed + wTime + 15 + wPath,
+                wKey + wVer + wSchema + wSuccess + wFailed + wTime + 18 + wPath,
                 Console.WindowWidth - 1
             );
-            string lineSep = new string('=', totalLineLength);
+            string lineSep = new('=', totalLineLength);
 
             Console.WriteLine(lineSep);
 
             Console.ForegroundColor = ConsoleColor.DarkGray;
             Console.WriteLine(
-                $"{"客户端".PadRight(wKey - 3)} │ {"版本".PadRight(wSchema - 2)} │ {"成功".PadLeft(wSuccess - 2)} │ {"失败".PadLeft(wFailed - 2)} │ {"耗时".PadLeft(wTime - 2)} │ 输出目录"
+                $"{"客户端".PadRight(wKey - 3)} │ {"版本".PadRight(wVer - 2)} │ {"Schema".PadRight(wSchema - 2)} │ {"成功".PadLeft(wSuccess - 2)} │ {"失败".PadLeft(wFailed - 2)} │ {"耗时".PadLeft(wTime - 2)} │ 输出目录"
             );
             Console.WriteLine(lineSep);
 
@@ -158,7 +158,8 @@ class Program
             {
                 Console.ResetColor();
                 Console.Write($"{r.ClientKey}".PadRight(wKey) + " │ ");
-                Console.Write(r.SchemaVersion.PadRight(wSchema) + " │ ");
+                Console.Write(r.ClientVersion.PadRight(wVer) + " │ ");
+                Console.Write(r.ActualSchema.PadRight(wSchema) + " │ ");
                 Console.Write(r.SuccessCount.ToString().PadLeft(wSuccess) + " │ ");
 
                 if (r.FailedCount > 0)
@@ -198,7 +199,7 @@ class Program
         bool skipOffset
     )
     {
-        var logBuffer = new System.Text.StringBuilder();
+        var logBuffer = new StringBuilder();
         var startTime = DateTime.Now;
 
         void LogStatus(string status, ConsoleColor color = ConsoleColor.White)
@@ -211,12 +212,12 @@ class Program
             }
         }
 
-        void LogDetail(string message)
-        {
-            logBuffer.AppendLine($"  {message}");
-        }
+        void LogDetail(string message) => logBuffer.AppendLine($"  {message}");
 
+        // 1. 获取客户端基本信息
         config.GetClients().TryGetValue(clientKey, out var client);
+        if (!KeyToLanguage.TryGetValue(clientKey, out var exportLanguage))
+            exportLanguage = Language.English;
 
         var internationalKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -226,96 +227,40 @@ class Program
             "fr",
         };
         bool isInternational = internationalKeys.Contains(clientKey);
+        string? gamePath = isInternational ? config.GlobalGamePath : client?.Path;
+        string? outputDir = client?.OutputDir;
 
-        string? gamePath;
-        if (isInternational)
-        {
-            gamePath = config.GlobalGamePath;
-        }
-        else
-        {
-            gamePath = client?.Path;
-        }
-
+        // 2. 路径检测与校验
         bool isDetectedPath = false;
         if (string.IsNullOrEmpty(gamePath) || !Directory.Exists(gamePath))
         {
             LogStatus("⚠ 路径未配置,尝试自动检测...", ConsoleColor.Yellow);
-
-            var detector = new GamePathDetector();
-            var detectedPath = detector.Detect(isInternational);
-
-            if (!string.IsNullOrEmpty(detectedPath))
-            {
-                LogDetail($"✓ 已自动检测到路径: {detectedPath}");
-                gamePath = detectedPath;
-                isDetectedPath = true;
-            }
-            else
+            gamePath = new GamePathDetector().Detect(isInternational);
+            if (string.IsNullOrEmpty(gamePath))
             {
                 LogStatus("✗ 未检测到路径,跳过", ConsoleColor.Red);
-                return new ClientExportResult
-                {
-                    SuccessCount = 0,
-                    FailedCount = 0,
-                    ElapsedSeconds = 0,
-                };
+                return new ClientExportResult();
             }
+            LogDetail($"✓ 已自动检测到路径: {gamePath}");
+            isDetectedPath = true;
         }
 
-        if (!string.IsNullOrEmpty(gamePath) && Directory.Exists(gamePath))
-        {
-            var combinedPath = Path.Combine(gamePath, "game", "sqpack");
-            if (Directory.Exists(combinedPath))
-            {
-                gamePath = combinedPath;
-            }
-        }
+        // 路径规范化 (sqpack 检测)
+        var combinedPath = Path.Combine(gamePath, "game", "sqpack");
+        if (Directory.Exists(combinedPath))
+            gamePath = combinedPath;
 
-        var outputDir = client?.OutputDir;
         if (string.IsNullOrEmpty(outputDir))
         {
             LogStatus("✗ 配置错误: 未指定输出目录", ConsoleColor.Red);
-            return new ClientExportResult
-            {
-                SuccessCount = 0,
-                FailedCount = 0,
-                ElapsedSeconds = 0,
-            };
+            return new ClientExportResult();
         }
-        string schemaVersion;
-        if (isInternational)
-            schemaVersion = client?.SchemaVersion ?? config.GlobalSchemaVersion ?? "latest";
-        else
-            schemaVersion = client?.SchemaVersion ?? "latest";
-
-        var schemas = schemaCache.GetOrAdd(
-            schemaVersion,
-            version =>
-            {
-                var dir = Path.Combine("./EXDSchema/schemas", version);
-                var service = new SchemaService();
-                return service.LoadSchemas(dir);
-            }
-        );
-
-        if (!KeyToLanguage.TryGetValue(clientKey, out var exportLanguage))
-            exportLanguage = Language.English;
-
-        var fullOutputDir = Path.GetFullPath(outputDir);
 
         if (!Directory.Exists(gamePath))
         {
             LogStatus($"✗ {exportLanguage} 路径不存在,跳过", ConsoleColor.Red);
-            return new ClientExportResult
-            {
-                SuccessCount = 0,
-                FailedCount = 0,
-                ElapsedSeconds = 0,
-            };
+            return new ClientExportResult();
         }
-
-        Directory.CreateDirectory(outputDir);
 
         var failedSheets = new ConcurrentBag<(string name, string error)>();
         int successCount = 0;
@@ -324,6 +269,7 @@ class Program
         {
             var stopwatch = Stopwatch.StartNew();
 
+            // 3. 初始化 Lumina
             if (!gameDataPool.TryGetValue(gamePath, out var lumina))
             {
                 lumina = new GameData(
@@ -333,46 +279,95 @@ class Program
                 gameDataPool[gamePath] = lumina;
             }
 
-            var allSheetNames = lumina.Excel.SheetNames.ToList();
-            var sheetNames = new List<string>(allSheetNames);
-
-            if (cmdFilters != null && cmdFilters.Count > 0)
+            // 4. 版本与 Schema 检测
+            string? detectedVersion = null;
+            try
             {
-                sheetNames = sheetNames
-                    .Where(s =>
-                        cmdFilters.Any(f => s.Equals(f, StringComparison.OrdinalIgnoreCase))
-                    )
-                    .ToList();
+                var parentDir = Directory.GetParent(gamePath);
+                var verFile =
+                    parentDir != null ? Path.Combine(parentDir.FullName, "ffxivgame.ver") : null;
+                if (verFile != null && File.Exists(verFile))
+                    detectedVersion = File.ReadAllText(verFile).Trim();
             }
+            catch { }
 
-            bool shouldClear = clear;
-            string clearStrategySource = clear ? "[命令行 --clear]" : "[保留现有文件]";
+            if (!string.IsNullOrEmpty(detectedVersion))
+                LogDetail($"✓ 自动检测到游戏版本: {detectedVersion}");
 
-            LogDetail($"清空策略: {(shouldClear ? "是" : "否")} {clearStrategySource}");
-            LogDetail($"待导出表数量: {sheetNames.Count} (总计: {allSheetNames.Count})");
+            string? schemaVersion = isInternational
+                ? client?.SchemaVersion ?? config.GlobalSchemaVersion
+                : client?.SchemaVersion;
+            if (
+                string.IsNullOrEmpty(schemaVersion)
+                || schemaVersion.Equals("latest", StringComparison.OrdinalIgnoreCase)
+            )
+                schemaVersion = detectedVersion ?? "latest";
 
-            Directory.CreateDirectory(outputDir);
-            if (shouldClear)
-            {
-                LogDetail($"正在检查并清空输出目录...");
-                bool clearSuccess = ClearDirectory(outputDir, globalConsoleLock);
-                if (!clearSuccess)
+            string finalSchemaDir = "";
+            var schemas = schemaCache.GetOrAdd(
+                schemaVersion!,
+                version =>
                 {
-                    return new ClientExportResult
+                    var schemaRoot = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "schemas");
+                    var targetDir = Path.Combine(schemaRoot, version);
+
+                    // Strategy 1: Local Cache (Fixed Version)
+                    if (
+                        !version.Equals("latest", StringComparison.OrdinalIgnoreCase)
+                        && Directory.Exists(targetDir)
+                    )
                     {
-                        SuccessCount = 0,
-                        FailedCount = 0,
-                        ElapsedSeconds = 0,
-                    };
+                        finalSchemaDir = targetDir;
+                        return new SchemaService().LoadSchemas(targetDir);
+                    }
+
+                    // Strategy 2: Online Download
+                    LogStatus($"⚠ 准备检查更新: {version}...", ConsoleColor.Yellow);
+                    var onlinePath = SchemaUpdater
+                        .DownloadAndExtractSchema(version, msg => LogDetail(msg), schemaRoot)
+                        .Result;
+                    if (!string.IsNullOrEmpty(onlinePath) && Directory.Exists(onlinePath))
+                    {
+                        LogStatus($"✓ Schema 获取成功: {version}", ConsoleColor.Green);
+                        finalSchemaDir = onlinePath;
+                        return new SchemaService().LoadSchemas(onlinePath);
+                    }
+
+                    // Strategy 3: Local Fallback
+                    var latestDir = Path.Combine(schemaRoot, "latest");
+                    if (Directory.Exists(latestDir))
+                    {
+                        LogStatus($"⚠ 在线更新失败, 回退至本地 'latest'", ConsoleColor.Yellow);
+                        finalSchemaDir = latestDir;
+                        return new SchemaService().LoadSchemas(latestDir);
+                    }
+
+                    finalSchemaDir = targetDir;
+                    return new SchemaService().LoadSchemas(targetDir);
                 }
-            }
+            );
 
-            bool includeOffset = !skipOffset;
-            var exporter = new ExdExporter(useHexcode, includeOffset);
+            // 5. 准备输出目录
+            Directory.CreateDirectory(outputDir);
+            var sheetNames = lumina.Excel.SheetNames.ToList();
+            if (cmdFilters?.Count > 0)
+                sheetNames =
+                [
+                    .. sheetNames.Where(s =>
+                        cmdFilters.Any(f => s.Equals(f, StringComparison.OrdinalIgnoreCase))
+                    ),
+                ];
 
-            int schemaCount = 0;
-            object consoleLock = new object();
+            LogDetail(
+                $"清空策略: {(clear ? "是" : "否")} {(clear ? "[命令行 --clear]" : "[保留现有文件]")}"
+            );
+            LogDetail($"待导出表数量: {sheetNames.Count}");
 
+            if (clear && !ClearDirectory(outputDir, globalConsoleLock))
+                return new ClientExportResult();
+
+            // 6. 核心解压逻辑
+            var exporter = new ExdExporter(useHexcode, !skipOffset);
             LogDetail($"表导出并行数: {maxSheetParallelism}");
             LogStatus($"准备解包 | 客户端: {clientKey}", ConsoleColor.Cyan);
 
@@ -383,16 +378,12 @@ class Program
                 {
                     try
                     {
-                        ExdSchema? schema = null;
                         var baseSheetName = sheetName.Contains('/')
-                            ? sheetName.Substring(sheetName.LastIndexOf('/') + 1)
+                            ? sheetName[(sheetName.LastIndexOf('/') + 1)..]
                             : sheetName;
-                        schemas.TryGetValue(baseSheetName, out schema);
-
+                        schemas.TryGetValue(baseSheetName, out var schema);
                         exporter.ExportSheet(lumina, sheetName, outputDir, exportLanguage, schema);
                         Interlocked.Increment(ref successCount);
-                        if (schema != null)
-                            Interlocked.Increment(ref schemaCount);
                     }
                     catch (Exception ex)
                     {
@@ -401,63 +392,36 @@ class Program
                 }
             );
 
+            // 7. 善后处理
+            if (successCount > 0 && isDetectedPath)
+                SaveDetectedPath(gamePath);
+
             stopwatch.Stop();
             LogStatus(
                 $"✓ 解包完成 | 成功: {successCount} | 失败: {failedSheets.Count} | 耗时: {stopwatch.Elapsed.TotalSeconds:F2}s",
                 ConsoleColor.Green
             );
 
-            if (failedSheets.Count > 0)
+            if (!failedSheets.IsEmpty)
             {
                 LogDetail($"\n失败详情 (前10个):");
                 foreach (var (name, error) in failedSheets.Take(10))
                     LogDetail($"  - {name}: {error}");
             }
 
-            if (successCount > 0 && isDetectedPath)
-            {
-                try
-                {
-                    LogDetail($"✓ 自动检测的路径有效,正在保存到配置文件...");
-
-                    if (isInternational)
-                    {
-                        config.GlobalGamePath = gamePath;
-                    }
-                    else
-                    {
-                        if (clientKey.Equals("cn", StringComparison.OrdinalIgnoreCase))
-                        {
-                            config.Cn ??= new ClientConfig();
-                            config.Cn.Path = gamePath;
-                        }
-                        else if (clientKey.Equals("ko", StringComparison.OrdinalIgnoreCase))
-                        {
-                            config.Ko ??= new ClientConfig();
-                            config.Ko.Path = gamePath;
-                        }
-                        else if (clientKey.Equals("tc", StringComparison.OrdinalIgnoreCase))
-                        {
-                            config.Tc ??= new ClientConfig();
-                            config.Tc.Path = gamePath;
-                        }
-                    }
-
-                    var configService = new ConfigService();
-                    configService.SaveConfig(config);
-                    LogDetail($"✓ 配置已保存,下次将直接使用此路径");
-                }
-                catch (Exception saveEx)
-                {
-                    LogDetail($"警告: 保存配置失败: {saveEx.Message}");
-                }
-            }
-            stopwatch.Stop();
             return new ClientExportResult
             {
                 ClientKey = clientKey,
                 LanguageName = exportLanguage.ToString(),
-                SchemaVersion = schemaVersion,
+                ClientVersion = detectedVersion ?? "Unknown",
+                ActualSchema = string.IsNullOrEmpty(finalSchemaDir)
+                    ? "Cache"
+                    : Path.GetFileName(
+                        finalSchemaDir.TrimEnd(
+                            Path.DirectorySeparatorChar,
+                            Path.AltDirectorySeparatorChar
+                        )
+                    ),
                 OutputDir = outputDir,
                 SuccessCount = successCount,
                 FailedCount = failedSheets.Count,
@@ -467,21 +431,45 @@ class Program
         catch (Exception ex)
         {
             LogStatus($"✗ 运行失败: {ex.Message}", ConsoleColor.Red);
-            return new ClientExportResult();
+            return new ClientExportResult { ClientKey = clientKey, ActualSchema = "Error" };
         }
         finally
         {
-            bool hasSignificantInfo = failedSheets.Count > 0 || isDetectedPath;
-
-            if (hasSignificantInfo && logBuffer.Length > 0)
+            if ((!failedSheets.IsEmpty || isDetectedPath) && logBuffer.Length > 0)
             {
                 lock (globalConsoleLock)
                 {
                     Console.ForegroundColor = ConsoleColor.DarkGray;
-                    Console.WriteLine($"\n[{clientKey}] 补充信息:");
-                    Console.WriteLine(logBuffer.ToString());
+                    Console.WriteLine($"\n[{clientKey}] 补充信息:\n{logBuffer}");
                     Console.ResetColor();
                 }
+            }
+        }
+
+        void SaveDetectedPath(string path)
+        {
+            try
+            {
+                LogDetail($"✓ 自动检测的路径有效,正在保存到配置文件...");
+                if (isInternational)
+                    config.GlobalGamePath = path;
+                else
+                {
+                    var target = clientKey.ToLower() switch
+                    {
+                        "cn" => config.Cn ??= new(),
+                        "ko" => config.Ko ??= new(),
+                        "tc" => config.Tc ??= new(),
+                        _ => null,
+                    };
+                    if (target != null)
+                        target.Path = path;
+                }
+                new ConfigService().SaveConfig(config);
+            }
+            catch (Exception e)
+            {
+                LogDetail($"警告: 保存配置失败: {e.Message}");
             }
         }
     }
@@ -542,10 +530,42 @@ class Program
                     if (response == "y" || response == "yes")
                     {
                         Console.WriteLine("正在清空目录...");
+                        var lockedFiles = new List<string>();
                         foreach (var file in allFiles)
-                            file.Delete();
+                        {
+                            try
+                            {
+                                file.Delete();
+                            }
+                            catch (IOException)
+                            {
+                                lockedFiles.Add(Path.GetRelativePath(path, file.FullName));
+                            }
+                            catch { }
+                        }
+
                         foreach (var subDir in dir.GetDirectories())
-                            subDir.Delete(true);
+                        {
+                            try
+                            {
+                                subDir.Delete(true);
+                            }
+                            catch { }
+                        }
+
+                        if (lockedFiles.Count > 0)
+                        {
+                            Console.ForegroundColor = ConsoleColor.Red;
+                            Console.WriteLine(
+                                $"\n✗ 警告: 有 {lockedFiles.Count} 个文件因被占用无法删除:"
+                            );
+                            foreach (var f in lockedFiles.Take(10))
+                                Console.WriteLine($"  - {f}");
+                            if (lockedFiles.Count > 10)
+                                Console.WriteLine("  ...");
+                            Console.ResetColor();
+                            return false;
+                        }
                         return true;
                     }
                     else
@@ -604,7 +624,7 @@ class Program
                 case "--language":
                 case "-l":
                     i++;
-                    while (i < args.Length && !args[i].StartsWith("-"))
+                    while (i < args.Length && !args[i].StartsWith('-'))
                     {
                         languages.Add(args[i]);
                         i++;
@@ -615,7 +635,7 @@ class Program
                 case "--sheets":
                 case "-s":
                     i++;
-                    while (i < args.Length && !args[i].StartsWith("-"))
+                    while (i < args.Length && !args[i].StartsWith('-'))
                     {
                         sheets.Add(args[i]);
                         i++;

@@ -49,22 +49,8 @@ XivExdUnpacker.exe --language all --hexcode --clear
 
 ## Entwicklung
 
-### Projekt vorbereiten
-
 ```bash
-# Repository klonen
-git clone --recursive https://github.com/Souma-Sumire/XivExdUnpacker.git
+git clone https://github.com/Souma-Sumire/XivExdUnpacker.git
 cd XivExdUnpacker
-# Submodule initialisieren
-git submodule update --init --recursive
-# Schema-Submodul auf die neueste Version aktualisieren
-git submodule update --remote
-```
-
-### Ausführen
-
-```bash
-# Hilfe anzeigen
-dotnet run -- --help
-# Siehe oben
+dotnet run -- --language de
 ```

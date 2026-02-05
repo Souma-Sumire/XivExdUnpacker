@@ -72,33 +72,7 @@ public class SchemaService
     public Dictionary<string, ExdSchema> LoadSchemas(string schemaDir)
     {
         string version = Path.GetFileName(schemaDir);
-        string gitHash = "";
-        try
-        {
-            var gitRoot = Directory.GetParent(schemaDir)?.Parent?.FullName;
-            if (!string.IsNullOrEmpty(gitRoot))
-            {
-                var psi = new ProcessStartInfo("git", "rev-parse --short HEAD")
-                {
-                    WorkingDirectory = gitRoot,
-                    RedirectStandardOutput = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                };
-                using var p = Process.Start(psi);
-                if (p != null)
-                {
-                    gitHash = p.StandardOutput.ReadToEnd().Trim();
-                    p.WaitForExit(200);
-                }
-            }
-        }
-        catch { }
-
-        Console.WriteLine(
-            $"[Schema] 正在解析 YAML 定义，请稍候 ({version})..."
-                + (string.IsNullOrEmpty(gitHash) ? "" : $" [{gitHash}]")
-        );
+        Console.WriteLine($"[Schema] 正在解析 YAML 定义，请稍候 ({version})...");
         var schemas = new System.Collections.Concurrent.ConcurrentDictionary<string, ExdSchema>(
             StringComparer.OrdinalIgnoreCase
         );

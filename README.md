@@ -53,18 +53,7 @@ XivExdUnpacker.exe --language all --hexcode --clear
 
 ```bash
 # Clone the repository
-git clone --recursive https://github.com/Souma-Sumire/XivExdUnpacker.git
+git clone https://github.com/Souma-Sumire/XivExdUnpacker.git
 cd XivExdUnpacker
-# Initialize submodules
-git submodule update --init --recursive
-# Update Schema submodule to latest
-git submodule update --remote
-```
-
-### Build & Run
-
-```bash
-# Show help
-dotnet run -- --help
-# Same as above
+dotnet run -- --language cn
 ```

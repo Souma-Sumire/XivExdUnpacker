@@ -49,22 +49,8 @@ XivExdUnpacker.exe --language all --hexcode --clear
 
 ## 開發
 
-### 準備項目
-
 ```bash
-# 複製項目
-git clone --recursive https://github.com/Souma-Sumire/XivExdUnpacker.git
+git clone https://github.com/Souma-Sumire/XivExdUnpacker.git
 cd XivExdUnpacker
-# 初始化子模塊
-git submodule update --init --recursive
-# 更新 Schema 子模塊到最新版本
-git submodule update --remote
-```
-
-### 運行
-
-```bash
-# 顯示幫助信息
-dotnet run -- --help
-# 下略，同上
+dotnet run -- --language tc
 ```

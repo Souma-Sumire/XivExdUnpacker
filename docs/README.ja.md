@@ -49,22 +49,8 @@ XivExdUnpacker.exe --language all --hexcode --clear
 
 ## 開発
 
-### プロジェクトの準備
-
 ```bash
-# リポジトリをクローン
-git clone --recursive https://github.com/Souma-Sumire/XivExdUnpacker.git
+git clone https://github.com/Souma-Sumire/XivExdUnpacker.git
 cd XivExdUnpacker
-# サブモジュールの初期化
-git submodule update --init --recursive
-# Schema サブモジュールを最新に更新
-git submodule update --remote
-```
-
-### 実行
-
-```bash
-# ヘルプを表示
-dotnet run -- --help
-# 以下省略、上記と同様
+dotnet run -- --language ja
 ```

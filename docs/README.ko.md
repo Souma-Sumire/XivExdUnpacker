@@ -49,22 +49,8 @@ XivExdUnpacker.exe --language all --hexcode --clear
 
 ## 개발
 
-### 프로젝트 준비
-
 ```bash
-# 저장소 복제
-git clone --recursive https://github.com/Souma-Sumire/XivExdUnpacker.git
+git clone https://github.com/Souma-Sumire/XivExdUnpacker.git
 cd XivExdUnpacker
-# 서브모듈 초기화
-git submodule update --init --recursive
-# Schema 서브모듈을 최신 버전으로 업데이트
-git submodule update --remote
-```
-
-### 실행
-
-```bash
-# 도움말 표시
-dotnet run -- --help
-# 위와 동일
+dotnet run -- --language ko
 ```

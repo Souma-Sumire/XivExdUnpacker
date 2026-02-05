@@ -14,8 +14,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          submodules: recursive # 包含 EXDSchema 等子模块
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
