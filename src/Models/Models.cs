@@ -8,7 +8,6 @@ public class AppConfig
     public string? GlobalSchemaVersion { get; set; }
     public List<string>? GlobalExclude { get; set; }
 
-    public int? MaxClientParallelism { get; set; }
     public int? MaxSheetParallelism { get; set; }
 
     public ClientConfig? En { get; set; }
