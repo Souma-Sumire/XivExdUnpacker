@@ -3,11 +3,30 @@ name: Publish Release
 on:
   push:
     tags:
-      - "v*" # 当推送以 v 开头的标签时触发，例如 v1.0.0
+      - "v*"
 
 jobs:
   publish:
-    runs-on: windows-latest
+    name: Build for ${{ matrix.rid }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - rid: win-x64
+            suffix: .exe
+            archive: zip
+          - rid: linux-x64
+            suffix: ""
+            archive: tar.gz
+          - rid: linux-arm64
+            suffix: ""
+            archive: tar.gz
+          - rid: osx-x64
+            suffix: ""
+            archive: zip
+          - rid: osx-arm64
+            suffix: ""
+            archive: zip
     permissions:
       contents: write
 
@@ -20,20 +39,31 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
-      - name: Publish Win-x64
+      - name: Publish
         run: |
-          dotnet publish -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -p:DebugType=none -p:DebugSymbols=false --output ./publish
+          dotnet publish -c Release -r ${{ matrix.rid }} --self-contained false \
+          -p:PublishSingleFile=true -p:DebugType=none -p:DebugSymbols=false \
+          --output ./publish/${{ matrix.rid }}
 
-      - name: Zip Release
-        shell: pwsh
+      - name: Build Archive (zip)
+        if: matrix.archive == 'zip'
         run: |
-          Compress-Archive -Path ./publish/* -DestinationPath ./XivExdUnpacker-win-x64.zip
+          cd ./publish/${{ matrix.rid }}
+          zip -r ../../XivExdUnpacker-${{ matrix.rid }}.zip ./*
+
+      - name: Build Archive (tar.gz)
+        if: matrix.archive == 'tar.gz'
+        run: |
+          cd ./publish/${{ matrix.rid }}
+          tar -czvf ../../XivExdUnpacker-${{ matrix.rid }}.tar.gz ./*
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: XivExdUnpacker-win-x64.zip
+          files: |
+            XivExdUnpacker-${{ matrix.rid }}.zip
+            XivExdUnpacker-${{ matrix.rid }}.tar.gz
           generate_release_notes: true
           draft: false
           prerelease: false
