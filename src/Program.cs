@@ -137,9 +137,9 @@ class Program
 
         if (orderedResults.Count > 0)
         {
-            int wKey = Math.Max(10, orderedResults.Max(r => $"[{r.ClientKey}]".Length));
+            int wKey = Math.Max(10, orderedResults.Max(r => r.ClientKey.Length));
             int wVer = Math.Max(10, orderedResults.Max(r => r.ClientVersion.Length));
-            int wSchema = Math.Max(10, orderedResults.Max(r => r.ActualSchema.Length));
+            int wSchema = Math.Max(10, orderedResults.Max(r => GetVisualWidth(r.ActualSchema)));
             int wSuccess = 8;
             int wFailed = 8;
             int wTime = 10;
@@ -155,26 +155,26 @@ class Program
 
             Console.ForegroundColor = ConsoleColor.DarkGray;
             Console.WriteLine(
-                $"{"客户端".PadRight(wKey - 3)} │ {"版本".PadRight(wVer - 2)} │ {"Schema".PadRight(wSchema - 2)} │ {"成功".PadLeft(wSuccess - 2)} │ {"失败".PadLeft(wFailed - 2)} │ {"耗时".PadLeft(wTime - 2)} │ 输出目录"
+                $"{PadRightVisual("客户端", wKey)} │ {PadRightVisual("版本", wVer)} │ {PadRightVisual("Schema", wSchema)} │ {PadLeftVisual("成功", wSuccess)} │ {PadLeftVisual("失败", wFailed)} │ {PadLeftVisual("耗时", wTime)} │ 输出目录"
             );
             Console.WriteLine(lineSep);
 
             foreach (var r in orderedResults)
             {
                 Console.ResetColor();
-                Console.Write($"{r.ClientKey}".PadRight(wKey) + " │ ");
-                Console.Write(r.ClientVersion.PadRight(wVer) + " │ ");
-                Console.Write(r.ActualSchema.PadRight(wSchema) + " │ ");
-                Console.Write(r.SuccessCount.ToString().PadLeft(wSuccess) + " │ ");
+                Console.Write(PadRightVisual(r.ClientKey, wKey) + " │ ");
+                Console.Write(PadRightVisual(r.ClientVersion, wVer) + " │ ");
+                Console.Write(PadRightVisual(r.ActualSchema, wSchema) + " │ ");
+                Console.Write(PadLeftVisual(r.SuccessCount.ToString(), wSuccess) + " │ ");
 
                 if (r.FailedCount > 0)
                     Console.ForegroundColor = ConsoleColor.Red;
                 else
                     Console.ResetColor();
-                Console.Write(r.FailedCount.ToString().PadLeft(wFailed) + " │ ");
+                Console.Write(PadLeftVisual(r.FailedCount.ToString(), wFailed) + " │ ");
 
                 Console.ResetColor();
-                Console.Write((r.ElapsedSeconds.ToString("F2") + "s").PadLeft(wTime) + " │ ");
+                Console.Write(PadLeftVisual(r.ElapsedSeconds.ToString("F2") + "s", wTime) + " │ ");
 
                 Console.ForegroundColor = ConsoleColor.DarkGray;
                 Console.WriteLine(r.OutputDir);
@@ -341,8 +341,18 @@ class Program
 
                     // Strategy 2: Online Download
                     LogStatus($"⚠ 准备检查更新: {version}...", ConsoleColor.Yellow);
+                    string? lastError = null;
                     var onlinePath = SchemaUpdater
-                        .DownloadAndExtractSchema(version, msg => LogDetail(msg), schemaRoot)
+                        .DownloadAndExtractSchema(
+                            version,
+                            msg =>
+                            {
+                                LogDetail(msg);
+                                if (msg.Contains("失败:") || msg.Contains("Error:"))
+                                    lastError = msg;
+                            },
+                            schemaRoot
+                        )
                         .Result;
                     if (!string.IsNullOrEmpty(onlinePath) && Directory.Exists(onlinePath))
                     {
@@ -355,7 +365,13 @@ class Program
                     var latestDir = Path.Combine(schemaRoot, "latest");
                     if (Directory.Exists(latestDir))
                     {
-                        LogStatus($"⚠ 在线更新失败, 回退至本地 'latest'", ConsoleColor.Yellow);
+                        var reason = !string.IsNullOrEmpty(lastError)
+                            ? $" ({lastError.Trim()})"
+                            : "";
+                        LogStatus(
+                            $"⚠ 在线更新失败{reason}, 回退至本地 'latest'",
+                            ConsoleColor.Yellow
+                        );
                         finalSchemaDir = latestDir;
                         return new SchemaService().LoadSchemas(latestDir);
                     }
@@ -724,5 +740,32 @@ class Program
         Console.WriteLine();
         Console.WriteLine("  # 使用简写");
         Console.WriteLine("  XivExdUnpacker -l cn -s Addon Quest -x -c");
+    }
+
+    private static int GetVisualWidth(string s)
+    {
+        if (string.IsNullOrEmpty(s))
+            return 0;
+        int width = 0;
+        foreach (char c in s)
+        {
+            if (c > 127)
+                width += 2;
+            else
+                width += 1;
+        }
+        return width;
+    }
+
+    private static string PadRightVisual(string s, int width)
+    {
+        int vWidth = GetVisualWidth(s);
+        return s + new string(' ', Math.Max(0, width - vWidth));
+    }
+
+    private static string PadLeftVisual(string s, int width)
+    {
+        int vWidth = GetVisualWidth(s);
+        return new string(' ', Math.Max(0, width - vWidth)) + s;
     }
 }
