@@ -4,7 +4,7 @@ using System.IO.Compression;
 using System.Net.Http;
 using System.Threading.Tasks;
 
-namespace XivExdUnpacker.Services;
+namespace XivExdUnpacker.src.Services;
 
 public static class SchemaUpdater
 {
