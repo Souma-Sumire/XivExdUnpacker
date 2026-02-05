@@ -1,6 +1,6 @@
 using Lumina.Data;
 
-namespace XivExdUnpacker.Models;
+namespace XivExdUnpacker.src.Models;
 
 public class AppConfig
 {

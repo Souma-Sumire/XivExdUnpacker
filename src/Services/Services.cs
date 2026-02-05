@@ -1,14 +1,14 @@
 using System.Diagnostics;
 using System.Text.Json;
-using XivExdUnpacker.Models;
+using XivExdUnpacker.src.Models;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 
-namespace XivExdUnpacker.Services;
+namespace XivExdUnpacker.src.Services;
 
 public class ConfigService
 {
-    public AppConfig LoadConfig()
+    public static AppConfig LoadConfig()
     {
         var configPath = Path.Combine(Directory.GetCurrentDirectory(), "config.yml");
         if (!File.Exists(configPath))
@@ -44,7 +44,7 @@ public class ConfigService
         }
     }
 
-    public void SaveConfig(AppConfig config)
+    public static void SaveConfig(AppConfig config)
     {
         var configPath = Path.Combine(Directory.GetCurrentDirectory(), "config.yml");
         try
@@ -69,7 +69,7 @@ public class SchemaService
         .IgnoreUnmatchedProperties()
         .Build();
 
-    public Dictionary<string, ExdSchema> LoadSchemas(string schemaDir)
+    public static Dictionary<string, ExdSchema> LoadSchemas(string schemaDir)
     {
         string version = Path.GetFileName(schemaDir);
         Console.WriteLine($"[Schema] 正在解析 YAML 定义，请稍候 ({version})...");
@@ -94,7 +94,10 @@ public class SchemaService
                     if (schema?.Name != null)
                         schemas.TryAdd(schema.Name, schema);
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[Schema] 加载 {Path.GetFileName(file)} 失败: {ex.Message}");
+                }
             }
         );
 

@@ -106,9 +106,18 @@ public static class SchemaUpdater
 
             log($"正在下载定义: {targetUrl}");
 
+            // Ensure root exists
+            Directory.CreateDirectory(outputRoot);
+
             // Download
             var zipPath = Path.Combine(outputRoot, $"{targetDirName}.zip");
-            var zipBytes = await _httpClient.GetByteArrayAsync(targetUrl);
+            var response = await _httpClient.GetAsync(targetUrl);
+            if (!response.IsSuccessStatusCode)
+            {
+                log($"下载失败: {response.StatusCode} ({targetUrl})");
+                return null;
+            }
+            var zipBytes = await response.Content.ReadAsByteArrayAsync();
             await File.WriteAllBytesAsync(zipPath, zipBytes);
 
             // Clean previous temp if exists

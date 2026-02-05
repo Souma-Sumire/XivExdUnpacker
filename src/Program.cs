@@ -3,9 +3,10 @@ using System.Diagnostics;
 using System.Text;
 using Lumina;
 using Lumina.Data;
-using XivExdUnpacker.Core;
-using XivExdUnpacker.Models;
 using XivExdUnpacker.Services;
+using XivExdUnpacker.src.Core;
+using XivExdUnpacker.src.Models;
+using XivExdUnpacker.src.Services;
 
 namespace XivExdUnpacker.src;
 
@@ -42,7 +43,10 @@ class Program
         {
             Process.GetCurrentProcess().PriorityClass = ProcessPriorityClass.AboveNormal;
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"无法提升进程优先级: {ex.Message}");
+        }
         Console.OutputEncoding = Encoding.UTF8;
 
         var parsedArgs = ParseCommandLineArgs(args);
@@ -61,7 +65,7 @@ class Program
         }
 
         var configService = new ConfigService();
-        var config = configService.LoadConfig();
+        var config = ConfigService.LoadConfig();
 
         if (config.GetClients().Count == 0)
         {
@@ -96,10 +100,11 @@ class Program
         var clientResults = new ConcurrentBag<(string key, ClientExportResult result)>();
         object globalConsoleLock = new();
 
-        var schemaCache = new ConcurrentDictionary<string, Dictionary<string, ExdSchema>>(
-            StringComparer.OrdinalIgnoreCase
-        );
         var gameDataPool = new Dictionary<string, GameData>(StringComparer.OrdinalIgnoreCase);
+        var schemaCache = new ConcurrentDictionary<
+            string,
+            (string dir, Dictionary<string, ExdSchema> schemas)
+        >(StringComparer.OrdinalIgnoreCase);
 
         int maxSheetParallelism =
             config.MaxSheetParallelism ?? Math.Clamp(Environment.ProcessorCount, 1, 8);
@@ -197,7 +202,10 @@ class Program
         List<string> cmdFilters,
         object globalConsoleLock,
         int maxSheetParallelism,
-        ConcurrentDictionary<string, Dictionary<string, ExdSchema>> schemaCache,
+        ConcurrentDictionary<
+            string,
+            (string dir, Dictionary<string, ExdSchema> schemas)
+        > schemaCache,
         Dictionary<string, GameData> gameDataPool,
         bool useHexcode,
         bool clear,
@@ -322,29 +330,41 @@ class Program
             }
 
             string finalSchemaDir = "";
-            var schemas = schemaCache.GetOrAdd(
-                schemaVersion!,
-                version =>
+            var schemaRoot = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "schemas");
+            Directory.CreateDirectory(schemaRoot);
+
+            Dictionary<string, ExdSchema>? schemas = null;
+            if (schemaCache.TryGetValue(schemaVersion!, out var cached))
+            {
+                finalSchemaDir = cached.dir;
+                schemas = cached.schemas;
+            }
+            else
+            {
+                Dictionary<string, ExdSchema> GetSchemas()
                 {
-                    var schemaRoot = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "schemas");
-                    var targetDir = Path.Combine(schemaRoot, version);
+                    var targetDir = Path.Combine(schemaRoot, schemaVersion!);
 
                     // Strategy 1: Local Cache (Fixed Version)
                     if (
-                        !version.Equals("latest", StringComparison.OrdinalIgnoreCase)
+                        !schemaVersion!.Equals("latest", StringComparison.OrdinalIgnoreCase)
                         && Directory.Exists(targetDir)
                     )
                     {
-                        finalSchemaDir = targetDir;
-                        return new SchemaService().LoadSchemas(targetDir);
+                        var loaded = SchemaService.LoadSchemas(targetDir);
+                        if (loaded.Count > 0)
+                        {
+                            finalSchemaDir = targetDir;
+                            return loaded;
+                        }
                     }
 
                     // Strategy 2: Online Download
-                    LogStatus($"⚠ 准备检查更新: {version}...", ConsoleColor.Yellow);
+                    LogStatus($"⚠ 准备检查更新: {schemaVersion}...", ConsoleColor.Yellow);
                     string? lastError = null;
                     var onlinePath = SchemaUpdater
                         .DownloadAndExtractSchema(
-                            version,
+                            schemaVersion,
                             msg =>
                             {
                                 LogDetail(msg);
@@ -354,32 +374,100 @@ class Program
                             schemaRoot
                         )
                         .Result;
+
                     if (!string.IsNullOrEmpty(onlinePath) && Directory.Exists(onlinePath))
                     {
-                        LogStatus($"✓ Schema 获取成功: {version}", ConsoleColor.Green);
-                        finalSchemaDir = onlinePath;
-                        return new SchemaService().LoadSchemas(onlinePath);
+                        var loaded = SchemaService.LoadSchemas(onlinePath);
+                        if (loaded.Count > 0)
+                        {
+                            LogStatus($"✓ Schema 获取成功: {schemaVersion}", ConsoleColor.Green);
+                            finalSchemaDir = onlinePath;
+                            return loaded;
+                        }
                     }
 
-                    // Strategy 3: Local Fallback
-                    var latestDir = Path.Combine(schemaRoot, "latest");
-                    if (Directory.Exists(latestDir))
+                    try
                     {
-                        var reason = !string.IsNullOrEmpty(lastError)
-                            ? $" ({lastError.Trim()})"
-                            : "";
-                        LogStatus(
-                            $"⚠ 在线更新失败{reason}, 回退至本地 'latest'",
-                            ConsoleColor.Yellow
-                        );
-                        finalSchemaDir = latestDir;
-                        return new SchemaService().LoadSchemas(latestDir);
+                        // Strategy 3: Local Fallback / Online Latest
+                        if (!schemaVersion.Equals("latest", StringComparison.OrdinalIgnoreCase))
+                        {
+                            var fallbackReason = !string.IsNullOrEmpty(lastError)
+                                ? $" ({lastError.Trim()})"
+                                : "";
+                            LogStatus(
+                                $"⚠ 版本不可用{fallbackReason}, 正在回退至 'latest'...",
+                                ConsoleColor.Yellow
+                            );
+                            var latestPath = SchemaUpdater
+                                .DownloadAndExtractSchema(
+                                    "latest",
+                                    msg => LogDetail(msg),
+                                    schemaRoot
+                                )
+                                .Result;
+                            if (!string.IsNullOrEmpty(latestPath) && Directory.Exists(latestPath))
+                            {
+                                var loadedLatest = SchemaService.LoadSchemas(latestPath);
+                                if (loadedLatest.Count > 0)
+                                {
+                                    LogStatus(
+                                        $"✓ 已回退并使用 'latest' 版本的 Schema。",
+                                        ConsoleColor.Green
+                                    );
+                                    finalSchemaDir = latestPath;
+                                    return loadedLatest;
+                                }
+                            }
+
+                            var latestDir = Path.Combine(schemaRoot, "latest");
+                            if (Directory.Exists(latestDir))
+                            {
+                                var loadedLocalLatest = SchemaService.LoadSchemas(latestDir);
+                                if (loadedLocalLatest.Count > 0)
+                                {
+                                    var reason = !string.IsNullOrEmpty(lastError)
+                                        ? $" ({lastError.Trim()})"
+                                        : "";
+                                    LogStatus(
+                                        $"⚠ 在线更新失败{reason}, 回退至本地 'latest'",
+                                        ConsoleColor.Yellow
+                                    );
+                                    finalSchemaDir = latestDir;
+                                    return loadedLocalLatest;
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        LogDetail($"获取回退 Schema 时发生异常: {ex.Message}");
                     }
 
-                    finalSchemaDir = targetDir;
-                    return new SchemaService().LoadSchemas(targetDir);
+                    return [];
                 }
-            );
+
+                schemas = GetSchemas();
+                if (schemas.Count > 0)
+                {
+                    schemaCache.TryAdd(schemaVersion!, (finalSchemaDir, schemas));
+                }
+            }
+
+            if (schemas == null || schemas.Count == 0 || string.IsNullOrEmpty(finalSchemaDir))
+            {
+                LogStatus(
+                    "✗ 错误: 未能加载到任何 Schema (.yml) 文件。请检查网络连接或 schemas 目录是否存在定义。",
+                    ConsoleColor.Red
+                );
+                return new ClientExportResult
+                {
+                    ClientKey = clientKey,
+                    LanguageName = exportLanguage.ToString(),
+                    ClientVersion = detectedVersion ?? "Unknown",
+                    ActualSchema = "Missing",
+                    OutputDir = outputDir,
+                };
+            }
 
             // 5. 准备输出目录
             Directory.CreateDirectory(outputDir);
@@ -397,8 +485,20 @@ class Program
             );
             LogDetail($"待导出表数量: {sheetNames.Count}");
 
-            if (clear && !ClearDirectory(outputDir, globalConsoleLock))
-                return new ClientExportResult();
+            if (clear)
+            {
+                try
+                {
+                    LogDetail("正在执行目录清空策略...");
+                    if (!ClearDirectory(outputDir, globalConsoleLock))
+                        return new ClientExportResult();
+                }
+                catch (Exception ex)
+                {
+                    LogDetail($"准备输出目录时发生异常: {ex.Message}");
+                    return new ClientExportResult();
+                }
+            }
 
             // 6. 核心解压逻辑
             var exporter = new ExdExporter(useHexcode, !skipOffset);
@@ -421,46 +521,45 @@ class Program
                     }
                     catch (Exception ex)
                     {
+                        LogDetail($"表格导出异常 ({sheetName}): {ex.Message}");
                         failedSheets.Add((sheetName, ex.Message));
                     }
                 }
             );
 
-            // 7. 善后处理
-            if (successCount > 0 && isDetectedPath)
-                SaveDetectedPath(gamePath);
-
-            stopwatch.Stop();
-            LogStatus(
-                $"✓ 解包完成 | 成功: {successCount} | 失败: {failedSheets.Count} | 耗时: {stopwatch.Elapsed.TotalSeconds:F2}s",
-                ConsoleColor.Green
-            );
-
-            if (!failedSheets.IsEmpty)
+            try
             {
-                LogDetail($"\n失败详情 (前10个):");
-                foreach (var (name, error) in failedSheets.Take(10))
-                    LogDetail($"  - {name}: {error}");
+                if (successCount > 0 && isDetectedPath)
+                    SaveDetectedPath(gamePath);
+
+                return new ClientExportResult
+                {
+                    ClientKey = clientKey,
+                    LanguageName = exportLanguage.ToString(),
+                    ClientVersion = detectedVersion ?? "Unknown",
+                    ActualSchema = string.IsNullOrEmpty(finalSchemaDir)
+                        ? (schemaVersion ?? "Unknown")
+                        : Path.GetFileName(
+                            finalSchemaDir.TrimEnd(
+                                Path.DirectorySeparatorChar,
+                                Path.AltDirectorySeparatorChar
+                            )
+                        ),
+                    OutputDir = outputDir,
+                    SuccessCount = successCount,
+                    FailedCount = failedSheets.Count,
+                    ElapsedSeconds = stopwatch.Elapsed.TotalSeconds,
+                };
             }
-
-            return new ClientExportResult
+            catch (Exception ex)
             {
-                ClientKey = clientKey,
-                LanguageName = exportLanguage.ToString(),
-                ClientVersion = detectedVersion ?? "Unknown",
-                ActualSchema = string.IsNullOrEmpty(finalSchemaDir)
-                    ? "Cache"
-                    : Path.GetFileName(
-                        finalSchemaDir.TrimEnd(
-                            Path.DirectorySeparatorChar,
-                            Path.AltDirectorySeparatorChar
-                        )
-                    ),
-                OutputDir = outputDir,
-                SuccessCount = successCount,
-                FailedCount = failedSheets.Count,
-                ElapsedSeconds = stopwatch.Elapsed.TotalSeconds,
-            };
+                LogDetail($"数据收尾与统计时发生异常: {ex.Message}");
+                return new ClientExportResult
+                {
+                    ClientKey = clientKey,
+                    ActualSchema = "ReportError",
+                };
+            }
         }
         catch (Exception ex)
         {
@@ -499,7 +598,7 @@ class Program
                     if (target != null)
                         target.Path = path;
                 }
-                new ConfigService().SaveConfig(config);
+                ConfigService.SaveConfig(config);
             }
             catch (Exception e)
             {
@@ -571,11 +670,12 @@ class Program
                             {
                                 file.Delete();
                             }
-                            catch (IOException)
+                            catch (Exception ex)
                             {
-                                lockedFiles.Add(Path.GetRelativePath(path, file.FullName));
+                                lockedFiles.Add(
+                                    $"{Path.GetRelativePath(path, file.FullName)} (错误: {ex.Message})"
+                                );
                             }
-                            catch { }
                         }
 
                         foreach (var subDir in dir.GetDirectories())
@@ -584,7 +684,15 @@ class Program
                             {
                                 subDir.Delete(true);
                             }
-                            catch { }
+                            catch (Exception ex)
+                            {
+                                lock (consoleLock)
+                                {
+                                    Console.WriteLine(
+                                        $"无法删除子目录 {subDir.Name}: {ex.Message}"
+                                    );
+                                }
+                            }
                         }
 
                         if (lockedFiles.Count > 0)

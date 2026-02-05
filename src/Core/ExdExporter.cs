@@ -8,15 +8,15 @@ using Lumina.Data.Files.Excel;
 using Lumina.Data.Structs.Excel;
 using SaintCoinach.Text;
 using XivExdUnpacker.Decoders;
-using XivExdUnpacker.Models;
+using XivExdUnpacker.src.Models;
 
-namespace XivExdUnpacker.Core;
+namespace XivExdUnpacker.src.Core;
 
-public class ExdExporter
+public class ExdExporter(bool useHexcode = true, bool includeOffset = true)
 {
     private const int BufferSize = 131072;
-    private readonly bool _useHexcode;
-    private readonly bool _includeOffset;
+    private readonly bool _useHexcode = useHexcode;
+    private readonly bool _includeOffset = includeOffset;
 
     private static readonly ThreadLocal<XivStringDecoder> _threadHexDecoder = new(() =>
         new XivStringDecoder()
@@ -29,12 +29,6 @@ public class ExdExporter
 
     private static readonly Encoding _utf8WithBom = Encoding.UTF8;
 
-    public ExdExporter(bool useHexcode = true, bool includeOffset = true)
-    {
-        _useHexcode = useHexcode;
-        _includeOffset = includeOffset;
-    }
-
     public void ExportSheet(
         GameData lumina,
         string sheetName,
@@ -43,10 +37,9 @@ public class ExdExporter
         ExdSchema? schema
     )
     {
-        var headerFile = lumina.GetFile<ExcelHeaderFile>($"exd/{sheetName}.exh");
-        if (headerFile == null)
-            throw new Exception("无法读取表头文件");
-
+        var headerFile =
+            lumina.GetFile<ExcelHeaderFile>($"exd/{sheetName}.exh")
+            ?? throw new Exception("无法读取表头文件");
         Language actualLanguage =
             headerFile.Languages.Contains(Language.None) ? Language.None
             : headerFile.Languages.Contains(language) ? language
@@ -86,7 +79,7 @@ public class ExdExporter
         var sortedForSchema = indexedColumns.OrderBy(x => x.Definition.Offset).ToList();
 
         var (sortedNames, _) = GenerateColumnNamesAndTypes(
-            sortedForSchema.Select(x => x.Definition).ToArray(),
+            [.. sortedForSchema.Select(x => x.Definition)],
             schema
         );
 
@@ -248,7 +241,7 @@ public class ExdExporter
         }
     }
 
-    private (List<string> names, List<string> types) GenerateColumnNamesAndTypes(
+    private static (List<string> names, List<string> types) GenerateColumnNamesAndTypes(
         ExcelColumnDefinition[] columns,
         ExdSchema? schema
     )
@@ -339,7 +332,7 @@ public class ExdExporter
                     .ToString(System.Globalization.CultureInfo.InvariantCulture),
 
                 >= ExcelColumnDataType.PackedBool0 and <= ExcelColumnDataType.PackedBool7 => (
-                    (span[offset] & (1 << (column.Type - ExcelColumnDataType.PackedBool0))) != 0
+                    (span[offset] & 1 << column.Type - ExcelColumnDataType.PackedBool0) != 0
                 ).ToString(),
 
                 _ => $"<unknown:{column.Type}>",
