@@ -72,7 +72,7 @@ public static class SchemaUpdater
 
                 remoteHash = await GetLatestCommitHash(log);
                 var latestCachePath = Path.Combine(outputRoot, "latest");
-                var versionFile = Path.Combine(latestCachePath, "version.txt");
+                var versionFile = Path.Combine(outputRoot, "latest.version");
 
                 if (!string.IsNullOrEmpty(remoteHash) && File.Exists(versionFile))
                 {
@@ -145,23 +145,19 @@ public static class SchemaUpdater
                 Directory.Delete(innerDir, true);
             }
 
-            // Save Commit Hash in TEMP if available
+            Directory.Move(tempExtractPath, extractPath);
+
+            // Save Commit Hash in root schemas dir if available
             if (
                 !string.IsNullOrEmpty(remoteHash)
                 && version.Equals("latest", StringComparison.OrdinalIgnoreCase)
             )
             {
                 await File.WriteAllTextAsync(
-                    Path.Combine(tempExtractPath, "version.txt"),
+                    Path.Combine(outputRoot, "latest.version"),
                     remoteHash
                 );
             }
-
-            // ATOMIC SWAP: Delete old and move temp to final
-            if (Directory.Exists(extractPath))
-                Directory.Delete(extractPath, true);
-
-            Directory.Move(tempExtractPath, extractPath);
 
             return extractPath;
         }
