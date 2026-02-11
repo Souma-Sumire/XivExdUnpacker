@@ -6,29 +6,22 @@ on:
       - "v*"
 
 jobs:
-  publish:
+  build:
     name: Build for ${{ matrix.rid }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
         include:
           - rid: win-x64
-            suffix: .exe
             archive: zip
           - rid: linux-x64
-            suffix: ""
             archive: tar.gz
           - rid: linux-arm64
-            suffix: ""
             archive: tar.gz
           - rid: osx-x64
-            suffix: ""
             archive: zip
           - rid: osx-arm64
-            suffix: ""
             archive: zip
-    permissions:
-      contents: write
 
     steps:
       - name: Checkout code
@@ -57,13 +50,31 @@ jobs:
           cd ./publish/${{ matrix.rid }}
           tar -czvf ../../XivExdUnpacker-${{ matrix.rid }}.tar.gz ./*
 
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.rid }}
+          path: XivExdUnpacker-${{ matrix.rid }}.${{ matrix.archive }}
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: binary-*
+          path: artifacts
+          merge-multiple: true
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: |
-            XivExdUnpacker-${{ matrix.rid }}.zip
-            XivExdUnpacker-${{ matrix.rid }}.tar.gz
+          files: artifacts/*
           generate_release_notes: true
           draft: false
           prerelease: false
