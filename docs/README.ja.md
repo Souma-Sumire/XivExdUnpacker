@@ -47,6 +47,10 @@ XivExdUnpacker.exe --language all --hexcode --clear
 | `--skip-offset` | `-o` | CSV の offset 行をスキップ | false |
 | `--help` | `-h` | ヘルプ情報を表示 | - |
 
+> ### データだけが必要ですか？
+>
+> [ffxiv-datamining-hexcode-mixed](https://github.com/Souma-Sumire/ffxiv-datamining-hexcode-mixed) をチェックしてください。
+
 ## 開発
 
 ```bash

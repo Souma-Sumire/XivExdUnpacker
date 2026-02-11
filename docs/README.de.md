@@ -47,6 +47,10 @@ XivExdUnpacker.exe --language all --hexcode --clear
 | `--skip-offset` | `-o` | CSV-Offset-Zeilen überspringen | false |
 | `--help` | `-h` | Hilfeinformationen anzeigen | - |
 
+> ### Sie wollen nur die Daten?
+>
+> Schauen Sie sich [ffxiv-datamining-hexcode-mixed](https://github.com/Souma-Sumire/ffxiv-datamining-hexcode-mixed) an.
+
 ## Entwicklung
 
 ```bash

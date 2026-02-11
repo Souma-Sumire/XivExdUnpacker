@@ -47,6 +47,10 @@ XivExdUnpacker.exe --language all --hexcode --clear
 | `--skip-offset` | `-o` | CSV 오프셋 행 건너뛰기 | false |
 | `--help` | `-h` | 도움말 정보 표시 | - |
 
+> ### 데이터만 필요하신가요?
+>
+> [ffxiv-datamining-hexcode-mixed](https://github.com/Souma-Sumire/ffxiv-datamining-hexcode-mixed)를 확인해 보세요.
+
 ## 개발
 
 ```bash

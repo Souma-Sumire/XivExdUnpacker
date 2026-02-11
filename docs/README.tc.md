@@ -47,6 +47,10 @@ XivExdUnpacker.exe --language all --hexcode --clear
 | `--skip-offset` | `-o` | 跳過 CSV 的 offset 行 | false |
 | `--help` | `-h` | 顯示幫助信息 | - |
 
+> ### 只需要匯出好的資料？
+>
+> 請查看 [ffxiv-datamining-hexcode-mixed](https://github.com/Souma-Sumire/ffxiv-datamining-hexcode-mixed)。
+
 ## 開發
 
 ```bash
