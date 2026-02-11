@@ -44,7 +44,7 @@ XivExdUnpacker.exe --language all --hexcode --clear
 | `--sheets` | `-s` | 指定要导出的表名 | 全部 |
 | `--hexcode` | `-x` | 保留原始数据 | false |
 | `--clear` | `-c` | 导出前清空输出目录 | false |
-| `--skip-offset` | - | 跳过 CSV 的 offset 行 | false |
+| `--skip-offset` | `-o` | 跳过 CSV 的 offset 行 | false |
 | `--help` | `-h` | 显示帮助信息 | - |
 
 ## 开发

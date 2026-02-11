@@ -44,7 +44,7 @@ XivExdUnpacker.exe --language all --hexcode --clear
 | `--sheets` | `-s` | エクスポートするシート名を指定 | すべて |
 | `--hexcode` | `-x` | 生データを保持 | false |
 | `--clear` | `-c` | エクスポート前に出力ディレクトリをクリア | false |
-| `--skip-offset` | - | CSV の offset 行をスキップ | false |
+| `--skip-offset` | `-o` | CSV の offset 行をスキップ | false |
 | `--help` | `-h` | ヘルプ情報を表示 | - |
 
 ## 開発

@@ -44,7 +44,7 @@ XivExdUnpacker.exe --language all --hexcode --clear
 | `--sheets` | `-s` | Specify sheet names to export | All |
 | `--hexcode` | `-x` | Keep raw data | false |
 | `--clear` | `-c` | Clear output directory before exporting | false |
-| `--skip-offset` | - | Skip CSV offset rows | false |
+| `--skip-offset` | `-o` | Skip CSV offset rows | false |
 | `--help` | `-h` | Show help information | - |
 
 ## Development

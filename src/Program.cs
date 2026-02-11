@@ -796,6 +796,7 @@ class Program
                     break;
 
                 case "--skip-offset":
+                case "-o":
                     skipOffset = true;
                     break;
             }
@@ -830,7 +831,7 @@ class Program
             "  --hexcode, -x                保留原始数据 (默认: 解码字符串为人类可读格式)"
         );
         Console.WriteLine("  --clear, -c                  导出前清空输出目录");
-        Console.WriteLine("  --skip-offset                跳过 CSV 的 offset 行");
+        Console.WriteLine("  --skip-offset, -o            跳过 CSV 的 offset 行");
         Console.WriteLine("  --help, -h                   显示此帮助信息");
         Console.WriteLine();
         Console.WriteLine("示例:");
@@ -847,7 +848,7 @@ class Program
         Console.WriteLine("  XivExdUnpacker --language all --clear --skip-offset");
         Console.WriteLine();
         Console.WriteLine("  # 使用简写");
-        Console.WriteLine("  XivExdUnpacker -l cn -s Addon Quest -x -c");
+        Console.WriteLine("  XivExdUnpacker -l cn -s Addon Quest -x -c -o");
     }
 
     private static int GetVisualWidth(string s)

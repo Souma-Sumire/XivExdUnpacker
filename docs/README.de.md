@@ -44,7 +44,7 @@ XivExdUnpacker.exe --language all --hexcode --clear
 | `--sheets` | `-s` | Namen der zu exportierenden Tabellen angeben | Alle |
 | `--hexcode` | `-x` | Rohdaten beibehalten | false |
 | `--clear` | `-c` | Ausgabeverzeichnis vor dem Export leeren | false |
-| `--skip-offset` | - | CSV-Offset-Zeilen überspringen | false |
+| `--skip-offset` | `-o` | CSV-Offset-Zeilen überspringen | false |
 | `--help` | `-h` | Hilfeinformationen anzeigen | - |
 
 ## Entwicklung

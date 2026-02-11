@@ -44,7 +44,7 @@ XivExdUnpacker.exe --language all --hexcode --clear
 | `--sheets` | `-s` | 내보낼 시트 이름 지정 | 전체 |
 | `--hexcode` | `-x` | 원본 데이터 유지 | false |
 | `--clear` | `-c` | 내보내기 전 출력 디렉토리 비우기 | false |
-| `--skip-offset` | - | CSV 오프셋 행 건너뛰기 | false |
+| `--skip-offset` | `-o` | CSV 오프셋 행 건너뛰기 | false |
 | `--help` | `-h` | 도움말 정보 표시 | - |
 
 ## 개발
