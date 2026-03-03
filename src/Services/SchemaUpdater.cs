@@ -154,6 +154,8 @@ public static class SchemaUpdater
                 Directory.Delete(innerDir, true);
             }
 
+            if (Directory.Exists(extractPath))
+                Directory.Delete(extractPath, true);
             Directory.Move(tempExtractPath, extractPath);
 
             // Save Commit Hash in root schemas dir if available
