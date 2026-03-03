@@ -418,23 +418,24 @@ class Program
                                     return loadedLatest;
                                 }
                             }
+                        }
 
-                            var latestDir = Path.Combine(schemaRoot, "latest");
-                            if (Directory.Exists(latestDir))
+                        // 本地 latest 缓存回退 (适用于所有版本，包括 latest 自身在线下载失败的情况)
+                        var latestLocalDir = Path.Combine(schemaRoot, "latest");
+                        if (Directory.Exists(latestLocalDir))
+                        {
+                            var loadedLocalLatest = SchemaService.LoadSchemas(latestLocalDir);
+                            if (loadedLocalLatest.Count > 0)
                             {
-                                var loadedLocalLatest = SchemaService.LoadSchemas(latestDir);
-                                if (loadedLocalLatest.Count > 0)
-                                {
-                                    var reason = !string.IsNullOrEmpty(lastError)
-                                        ? $" ({lastError.Trim()})"
-                                        : "";
-                                    LogStatus(
-                                        $"⚠ 在线更新失败{reason}, 回退至本地 'latest'",
-                                        ConsoleColor.Yellow
-                                    );
-                                    finalSchemaDir = latestDir;
-                                    return loadedLocalLatest;
-                                }
+                                var reason = !string.IsNullOrEmpty(lastError)
+                                    ? $" ({lastError.Trim()})"
+                                    : "";
+                                LogStatus(
+                                    $"⚠ 在线更新失败{reason}, 回退至本地 'latest'",
+                                    ConsoleColor.Yellow
+                                );
+                                finalSchemaDir = latestLocalDir;
+                                return loadedLocalLatest;
                             }
                         }
                     }
@@ -459,6 +460,15 @@ class Program
                     "✗ 错误: 未能加载到任何 Schema (.yml) 文件。请检查网络连接或 schemas 目录是否存在定义。",
                     ConsoleColor.Red
                 );
+                if (logBuffer.Length > 0)
+                {
+                    lock (globalConsoleLock)
+                    {
+                        Console.ForegroundColor = ConsoleColor.DarkGray;
+                        Console.WriteLine($"[{clientKey}] 详细日志:\n{logBuffer}");
+                        Console.ResetColor();
+                    }
+                }
                 return new ClientExportResult
                 {
                     ClientKey = clientKey,
