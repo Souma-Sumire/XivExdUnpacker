@@ -94,7 +94,14 @@ class Program
             }
         }
 
-        Console.CursorVisible = true;
+        try
+        {
+            if (!Console.IsOutputRedirected)
+                Console.CursorVisible = true;
+        }
+        catch
+        {
+        }
 
         var totalStopwatch = Stopwatch.StartNew();
         var clientResults = new ConcurrentBag<(string key, ClientExportResult result)>();
@@ -150,9 +157,19 @@ class Program
             int wTime = 10;
             int wPath = orderedResults.Max(r => r.OutputDir.Length);
 
+            int windowWidth = 120;
+            try
+            {
+                if (!Console.IsOutputRedirected && Console.WindowWidth > 0)
+                    windowWidth = Console.WindowWidth;
+            }
+            catch
+            {
+            }
+
             int totalLineLength = Math.Min(
                 wKey + wVer + wSchema + wSuccess + wFailed + wTime + 18 + wPath,
-                Console.WindowWidth - 1
+                Math.Max(40, windowWidth - 1)
             );
             string lineSep = new('=', totalLineLength);
 
@@ -242,6 +259,11 @@ class Program
         bool isInternational = internationalKeys.Contains(clientKey);
         string? gamePath = isInternational ? config.GlobalGamePath : client?.Path;
         string? outputDir = client?.OutputDir;
+        if (!string.IsNullOrEmpty(outputDir) && !Path.IsPathRooted(outputDir))
+        {
+            var baseDir = Path.GetDirectoryName(ConfigService.ConfigPath) ?? AppDomain.CurrentDomain.BaseDirectory;
+            outputDir = Path.GetFullPath(Path.Combine(baseDir, outputDir));
+        }
 
         // 2. 路径检测与校验
         bool isDetectedPath = false;

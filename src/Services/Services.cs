@@ -8,20 +8,36 @@ namespace XivExdUnpacker.src.Services;
 
 public class ConfigService
 {
+    public static readonly string ConfigPath = FindConfigPath();
+
+    private static string FindConfigPath()
+    {
+        var dir = new DirectoryInfo(AppDomain.CurrentDomain.BaseDirectory);
+        while (dir != null)
+        {
+            if (File.Exists(Path.Combine(dir.FullName, "XivExdUnpacker.csproj")))
+            {
+                return Path.Combine(dir.FullName, "config.yml");
+            }
+            dir = dir.Parent;
+        }
+
+        return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "config.yml");
+    }
+
     public static AppConfig LoadConfig()
     {
-        var configPath = Path.Combine(Directory.GetCurrentDirectory(), "config.yml");
-        if (!File.Exists(configPath))
-            configPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "config.yml");
-
-        if (!File.Exists(configPath))
+        if (!File.Exists(ConfigPath))
         {
             Console.WriteLine("错误: 未找到 config.yml。");
             Console.WriteLine(
                 "请将 config.yml.example 复制并重命名为 config.yml，然后根据您的路径进行配置。"
             );
             Console.WriteLine("\n按任意键退出...");
-            Console.ReadKey();
+            if (!Console.IsInputRedirected)
+            {
+                Console.ReadKey();
+            }
             Environment.Exit(1);
         }
 
@@ -31,14 +47,17 @@ public class ConfigService
                 .WithNamingConvention(CamelCaseNamingConvention.Instance)
                 .IgnoreUnmatchedProperties()
                 .Build();
-            return deserializer.Deserialize<AppConfig>(File.ReadAllText(configPath))
+            return deserializer.Deserialize<AppConfig>(File.ReadAllText(ConfigPath))
                 ?? new AppConfig();
         }
         catch (Exception ex)
         {
             Console.WriteLine($"错误: 无法解析 config.yml: {ex.Message}");
             Console.WriteLine("\n按任意键退出...");
-            Console.ReadKey();
+            if (!Console.IsInputRedirected)
+            {
+                Console.ReadKey();
+            }
             Environment.Exit(1);
             return new AppConfig();
         }
@@ -46,13 +65,12 @@ public class ConfigService
 
     public static void SaveConfig(AppConfig config)
     {
-        var configPath = Path.Combine(Directory.GetCurrentDirectory(), "config.yml");
         try
         {
             var serializer = new SerializerBuilder()
                 .WithNamingConvention(CamelCaseNamingConvention.Instance)
                 .Build();
-            File.WriteAllText(configPath, serializer.Serialize(config), System.Text.Encoding.UTF8);
+            File.WriteAllText(ConfigPath, serializer.Serialize(config), System.Text.Encoding.UTF8);
             Console.WriteLine("配置已成功保存至 config.yml");
         }
         catch (Exception ex)
