@@ -6,24 +6,25 @@ using Lumina.Data;
 using Lumina.Data.Files;
 using Lumina.Data.Files.Excel;
 using Lumina.Data.Structs.Excel;
-using SaintCoinach.Text;
 using XivExdUnpacker.Decoders;
+using XivExdUnpacker.src.I18n;
 using XivExdUnpacker.src.Models;
 
 namespace XivExdUnpacker.src.Core;
+
+public record CellReadError(
+    string SheetName,
+    string RowId,
+    ushort ColumnOffset,
+    string ColumnType,
+    string Message
+);
 
 public class ExdExporter(bool useHexcode = true, bool includeOffset = true)
 {
     private const int BufferSize = 131072;
     private readonly bool _useHexcode = useHexcode;
     private readonly bool _includeOffset = includeOffset;
-
-    private static readonly ThreadLocal<XivStringDecoder> _threadHexDecoder = new(() =>
-        new XivStringDecoder()
-    );
-    private static readonly ThreadLocal<CompleteReadableDecoder> _threadReadableDecoder = new(() =>
-        new CompleteReadableDecoder()
-    );
 
     private static readonly ConcurrentDictionary<string, byte> _createdDirs = new();
 
@@ -34,19 +35,28 @@ public class ExdExporter(bool useHexcode = true, bool includeOffset = true)
         string sheetName,
         string outputDir,
         Language language,
-        ExdSchema? schema
+        ExdSchema? schema,
+        Action<CellReadError>? onCellError = null
     )
     {
         var headerFile =
             lumina.GetFile<ExcelHeaderFile>($"exd/{sheetName}.exh")
-            ?? throw new Exception("无法读取表头文件");
+            ?? throw new Exception(Localizer.T(MsgKey.ExhReadFailed));
         Language actualLanguage =
             headerFile.Languages.Contains(Language.None) ? Language.None
             : headerFile.Languages.Contains(language) ? language
             : headerFile.Languages.Contains(Language.English) ? Language.English
             : headerFile.Languages.FirstOrDefault();
 
-        ExportSheetWithLanguage(lumina, sheetName, headerFile, outputDir, actualLanguage, schema);
+        ExportSheetWithLanguage(
+            lumina,
+            sheetName,
+            headerFile,
+            outputDir,
+            actualLanguage,
+            schema,
+            onCellError
+        );
     }
 
     private void ExportSheetWithLanguage(
@@ -55,7 +65,8 @@ public class ExdExporter(bool useHexcode = true, bool includeOffset = true)
         ExcelHeaderFile headerFile,
         string outputDir,
         Language language,
-        ExdSchema? schema
+        ExdSchema? schema,
+        Action<CellReadError>? onCellError
     )
     {
         var header = headerFile.Header;
@@ -183,37 +194,37 @@ public class ExdExporter(bool useHexcode = true, bool includeOffset = true)
                         foreach (var col in finalColumns)
                         {
                             writer.Write(',');
-                            var value = ReadColumnValue(
+                            WriteColumnValue(
+                                writer,
                                 sheetName,
                                 fullRowId,
                                 exdFile.Data,
                                 subrowDataStart,
                                 col.Definition,
-                                header.DataOffset
+                                header.DataOffset,
+                                onCellError
                             );
-                            WriteCsvValue(writer, value, col.Definition.Type);
                         }
                         writer.WriteLine();
                     }
                 }
                 else
                 {
-                    writer.Write(
-                        EscapeCsv(rowId.ToString(System.Globalization.CultureInfo.InvariantCulture))
-                    );
+                    writer.Write(rowId);
 
                     foreach (var col in finalColumns)
                     {
                         writer.Write(',');
-                        var value = ReadColumnValue(
+                        WriteColumnValue(
+                            writer,
                             sheetName,
-                            rowId,
+                            rowId.ToString(),
                             exdFile.Data,
                             rowDataStart,
                             col.Definition,
-                            header.DataOffset
+                            header.DataOffset,
+                            onCellError
                         );
-                        WriteCsvValue(writer, value, col.Definition.Type);
                     }
                     writer.WriteLine();
                 }
@@ -221,24 +232,24 @@ public class ExdExporter(bool useHexcode = true, bool includeOffset = true)
         }
     }
 
-    private void WriteCsvValue(StreamWriter writer, string value, ExcelColumnDataType type)
+    private static void WriteQuotedCsvString(StreamWriter writer, string value)
     {
-        if (type == ExcelColumnDataType.String)
+        writer.Write('"');
+        int start = 0;
+        while (start < value.Length)
         {
-            writer.Write('"');
-            foreach (char c in value)
+            int quoteIdx = value.IndexOf('"', start);
+            if (quoteIdx < 0)
             {
-                if (c == '"')
-                    writer.Write("\"\"");
-                else
-                    writer.Write(c);
+                writer.Write(value.AsSpan(start));
+                break;
             }
-            writer.Write('"');
+            if (quoteIdx > start)
+                writer.Write(value.AsSpan(start, quoteIdx - start));
+            writer.Write("\"\"");
+            start = quoteIdx + 1;
         }
-        else
-        {
-            writer.Write(EscapeCsv(value));
-        }
+        writer.Write('"');
     }
 
     private static (List<string> names, List<string> types) GenerateColumnNamesAndTypes(
@@ -285,109 +296,132 @@ public class ExdExporter(bool useHexcode = true, bool includeOffset = true)
         return (names, []);
     }
 
-    private string ReadColumnValue(
+    private void WriteColumnValue(
+        StreamWriter writer,
         string sheetName,
-        object rowId,
+        string rowId,
         byte[] data,
         int rowDataStart,
         ExcelColumnDefinition column,
-        ushort headerDataOffset
+        ushort headerDataOffset,
+        Action<CellReadError>? onCellError
     )
     {
         var offset = rowDataStart + column.Offset;
         try
         {
             var span = data.AsSpan();
-            return column.Type switch
+            var culture = System.Globalization.CultureInfo.InvariantCulture;
+            Span<char> numBuf = stackalloc char[64];
+
+            switch (column.Type)
             {
-                ExcelColumnDataType.String => ReadString(
-                    data,
-                    offset,
-                    rowDataStart,
-                    headerDataOffset
-                ),
-                ExcelColumnDataType.Bool => (span[offset] != 0).ToString(),
-                ExcelColumnDataType.Int8 => ((sbyte)span[offset]).ToString(),
-                ExcelColumnDataType.UInt8 => span[offset].ToString(),
-                ExcelColumnDataType.Int16 => BinaryPrimitives
-                    .ReadInt16BigEndian(span.Slice(offset, 2))
-                    .ToString(),
-                ExcelColumnDataType.UInt16 => BinaryPrimitives
-                    .ReadUInt16BigEndian(span.Slice(offset, 2))
-                    .ToString(),
-                ExcelColumnDataType.Int32 => BinaryPrimitives
-                    .ReadInt32BigEndian(span.Slice(offset, 4))
-                    .ToString(),
-                ExcelColumnDataType.UInt32 => BinaryPrimitives
-                    .ReadUInt32BigEndian(span.Slice(offset, 4))
-                    .ToString(System.Globalization.CultureInfo.InvariantCulture),
-                ExcelColumnDataType.Float32 => BitConverter
-                    .Int32BitsToSingle(BinaryPrimitives.ReadInt32BigEndian(span.Slice(offset, 4)))
-                    .ToString(System.Globalization.CultureInfo.InvariantCulture),
-                ExcelColumnDataType.Int64 => BinaryPrimitives
-                    .ReadInt64BigEndian(span.Slice(offset, 8))
-                    .ToString(System.Globalization.CultureInfo.InvariantCulture),
-                ExcelColumnDataType.UInt64 => BinaryPrimitives
-                    .ReadUInt64BigEndian(span.Slice(offset, 8))
-                    .ToString(System.Globalization.CultureInfo.InvariantCulture),
-
-                >= ExcelColumnDataType.PackedBool0 and <= ExcelColumnDataType.PackedBool7 => (
-                    (span[offset] & 1 << column.Type - ExcelColumnDataType.PackedBool0) != 0
-                ).ToString(),
-
-                _ => $"<unknown:{column.Type}>",
-            };
+                case ExcelColumnDataType.String:
+                    WriteQuotedCsvString(
+                        writer,
+                        ReadString(data, offset, rowDataStart, headerDataOffset)
+                    );
+                    break;
+                case ExcelColumnDataType.Bool:
+                    writer.Write(span[offset] != 0 ? "True" : "False");
+                    break;
+                case ExcelColumnDataType.Int8:
+                    ((sbyte)span[offset]).TryFormat(numBuf, out int w1, default, culture);
+                    writer.Write(numBuf[..w1]);
+                    break;
+                case ExcelColumnDataType.UInt8:
+                    span[offset].TryFormat(numBuf, out int w2, default, culture);
+                    writer.Write(numBuf[..w2]);
+                    break;
+                case ExcelColumnDataType.Int16:
+                    BinaryPrimitives
+                        .ReadInt16BigEndian(span.Slice(offset, 2))
+                        .TryFormat(numBuf, out int w3, default, culture);
+                    writer.Write(numBuf[..w3]);
+                    break;
+                case ExcelColumnDataType.UInt16:
+                    BinaryPrimitives
+                        .ReadUInt16BigEndian(span.Slice(offset, 2))
+                        .TryFormat(numBuf, out int w4, default, culture);
+                    writer.Write(numBuf[..w4]);
+                    break;
+                case ExcelColumnDataType.Int32:
+                    BinaryPrimitives
+                        .ReadInt32BigEndian(span.Slice(offset, 4))
+                        .TryFormat(numBuf, out int w5, default, culture);
+                    writer.Write(numBuf[..w5]);
+                    break;
+                case ExcelColumnDataType.UInt32:
+                    BinaryPrimitives
+                        .ReadUInt32BigEndian(span.Slice(offset, 4))
+                        .TryFormat(numBuf, out int w6, default, culture);
+                    writer.Write(numBuf[..w6]);
+                    break;
+                case ExcelColumnDataType.Float32:
+                    BitConverter
+                        .Int32BitsToSingle(BinaryPrimitives.ReadInt32BigEndian(span.Slice(offset, 4)))
+                        .TryFormat(numBuf, out int w7, default, culture);
+                    writer.Write(numBuf[..w7]);
+                    break;
+                case ExcelColumnDataType.Int64:
+                    BinaryPrimitives
+                        .ReadInt64BigEndian(span.Slice(offset, 8))
+                        .TryFormat(numBuf, out int w8, default, culture);
+                    writer.Write(numBuf[..w8]);
+                    break;
+                case ExcelColumnDataType.UInt64:
+                    BinaryPrimitives
+                        .ReadUInt64BigEndian(span.Slice(offset, 8))
+                        .TryFormat(numBuf, out int w9, default, culture);
+                    writer.Write(numBuf[..w9]);
+                    break;
+                case >= ExcelColumnDataType.PackedBool0 and <= ExcelColumnDataType.PackedBool7:
+                    writer.Write(
+                        (span[offset] & (1 << (column.Type - ExcelColumnDataType.PackedBool0))) != 0
+                            ? "True"
+                            : "False"
+                    );
+                    break;
+                default:
+                    writer.Write($"<unknown:{column.Type}>");
+                    break;
+            }
         }
         catch (Exception ex)
         {
             if (sheetName == "CustomTalkDefineClient" || sheetName == "QuestDefineClient")
-                return "";
+                return;
 
-            lock (Console.Out)
-            {
-                Console.ForegroundColor = ConsoleColor.Red;
-                Console.Write($"[Error] ");
-                Console.ResetColor();
-                Console.WriteLine(
-                    $"读取失败 @ {sheetName} -> 行:{rowId} | 列偏移:0x{column.Offset:X} | 类型:{column.Type} | 实际地址:0x{offset:X}"
-                );
-
-                string hexDump;
-                try
-                {
-                    int dumpSize = Math.Min(16, data.Length - offset);
-                    if (offset >= 0 && offset < data.Length && dumpSize > 0)
-                        hexDump = BitConverter.ToString(data, offset, dumpSize).Replace("-", " ");
-                    else
-                        hexDump = "N/A (越界)";
-                }
-                catch
-                {
-                    hexDump = "获取失败";
-                }
-
-                Console.ForegroundColor = ConsoleColor.DarkGray;
-                Console.WriteLine($"        错误信息: {ex.Message}");
-                Console.WriteLine($"        原始数据: [{hexDump}]");
-                Console.ResetColor();
-            }
-            return "";
+            onCellError?.Invoke(
+                new CellReadError(
+                    sheetName,
+                    rowId,
+                    column.Offset,
+                    column.Type.ToString(),
+                    ex.Message
+                )
+            );
         }
     }
 
     private string ReadString(byte[] data, int offset, int rowDataStart, ushort headerDataOffset)
     {
         var stringOffset = BinaryPrimitives.ReadInt32BigEndian(data.AsSpan(offset, 4));
+        if (stringOffset < 0)
+            return string.Empty;
+
         var absoluteOffset = rowDataStart + headerDataOffset + stringOffset;
+        if (absoluteOffset < 0 || absoluteOffset >= data.Length)
+            return string.Empty;
+
         var length = 0;
         while (absoluteOffset + length < data.Length && data[absoluteOffset + length] != 0)
             length++;
-        var stringData = data.AsSpan(absoluteOffset, length).ToArray();
+        var stringMemory = data.AsMemory(absoluteOffset, length);
 
-        if (_useHexcode)
-            return _threadHexDecoder.Value!.Decode(stringData).ToString();
-        else
-            return _threadReadableDecoder.Value!.Decode(stringData);
+        return _useHexcode
+            ? SeStringDecoder.DecodeHexcode(stringMemory)
+            : SeStringDecoder.DecodeReadable(stringMemory);
     }
 
     private string EscapeCsv(string value)
