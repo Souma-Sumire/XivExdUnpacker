@@ -1,57 +1,36 @@
 # XivExdUnpacker
 
-一個基於 [Lumina](https://github.com/NotAdam/Lumina) 的最終幻想 XIV EXD 資料解包工具，用於平替 `SaintCoinach.Cmd` 的 `rawexd` 功能。
+基於 [Lumina](https://github.com/NotAdam/Lumina) 的《Final Fantasy XIV》EXD 資料解包工具，用於替代 `SaintCoinach.Cmd` 的 `rawexd` 匯出功能。
 
 [English](../README.md) | [日本語](./README.ja.md) | [Deutsch](./README.de.md) | [Français](./README.fr.md) | [简体中文](./README.cn.md) | [한국어](./README.ko.md) | [繁體中文](./README.tc.md)
 
-## 使用
+## 快速開始
 
-### 環境要求
-
-- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
-- FFXIV 的本地安裝
-
-### 安裝
-
-1. 從 [Releases](https://github.com/Souma-Sumire/XivExdUnpacker/releases) 下載最新版本。
-2. 解壓縮檔案。
-
-### 配置
-
-將 `config.yml.example` 複製為 `config.yml`，並編輯設置各服的 `path` 和 `outputDir`
-
-### 運行
+1. 從 [Releases](https://github.com/Souma-Sumire/XivExdUnpacker/releases) 下載對應平台的壓縮檔並解壓（需安裝 [.NET 10](https://dotnet.microsoft.com/download/dotnet/10.0)）。
+2. 將 `config.yml.example` 複製為 `config.yml`，依需求調整路徑與 `outputRoot`。
+3. 執行命令：
 
 ```bash
-# 顯示幫助信息
-XivExdUnpacker.exe --help
-
-# 匯出中文的所有表
-XivExdUnpacker.exe --language cn
-
-# 匯出英文和日文的 Action 和 Item 表
-XivExdUnpacker.exe --language en ja --sheets Action Item
-
-# 匯出所有語言，輸出 hexcode，匯出前清空輸出目錄
-XivExdUnpacker.exe --language all --hexcode --clear
+# 匯出繁體中文全部資料表
+XivExdUnpacker --language tc
+# 匯出所有語言的 Action 與 Item 表，保留 <hex:...> 控制碼並在匯出前清空輸出
+XivExdUnpacker --language all --sheets Action Item --hexcode --clear
 ```
 
-### 命令行參數
+## 命令列參數
 
-| 參數 | 簡寫 | 說明 | 默認值 |
-| ---- | ---- | ---- | ------ |
-| `--language` | `-l` | 指定要匯出的語言 (必需) | - |
-| `--sheets` | `-s` | 指定要匯出的表名 | 全部 |
-| `--hexcode` | `-x` | 保留原始資料 | false |
-| `--clear` | `-c` | 匯出前清空輸出目錄 | false |
-| `--skip-offset` | `-o` | 跳過 CSV 的 offset 行 | false |
-| `--help` | `-h` | 顯示幫助信息 | - |
+| 參數 | 簡寫 | 說明 | 預設值 |
+| --- | --- | --- | --- |
+| `--language` | `-l` | 目標語言（`en`、`ja`、`de`、`fr`、`chs`、`ko`、`tc`、`all`） | 必填 |
+| `--sheets` | `-s` | 指定匯出的表名 | 全部 |
+| `--hexcode` | `-x` | 保留控制碼為 `<hex:...>`（見[標籤格式說明](./STRING_FORMAT.md)） | `false` |
+| `--clear` | `-c` | 匯出前清空輸出目錄 | `false` |
+| `--skip-offset` | `-o` | 略過 CSV 中的 `offset` 列 | `false` |
+| `--help` | `-h` | 顯示說明 | - |
 
-> ### 只需要匯出好的資料？
->
-> 請查看 [ffxiv-datamining-hexcode-mixed](https://github.com/Souma-Sumire/ffxiv-datamining-hexcode-mixed)。
+> 只需現成的解包 CSV 資料？可直接瀏覽 [ffxiv-datamining-hexcode-mixed](https://github.com/Souma-Sumire/ffxiv-datamining-hexcode-mixed)。
 
-## 開發
+## 本地開發
 
 ```bash
 git clone https://github.com/Souma-Sumire/XivExdUnpacker.git

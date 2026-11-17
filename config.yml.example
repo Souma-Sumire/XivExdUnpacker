@@ -1,34 +1,25 @@
-# [性能] 每个客户端内部导出表的并行数,默认为 CPU 核心数
-# 如果需要限制 CPU 使用率,可以设置为较小的值
-# maxSheetParallelism: 4
+# UI language: "en" (default) or "chs"
+uiLanguage: "en"
 
-# [国际服专用] 游戏路径 (en, ja, de, fr)
-globalGamePath: "C:/Program Files (x86)/SquareEnix/FINAL FANTASY XIV - A Realm Reborn"
+# Default output root directory; each client exports to <outputRoot>/<lang> unless outputDir is set
+outputRoot: "./rawexd"
 
-# [国际服专用] 指定 Schema 版本
-# 默认不填会自动通过 ffxivgame.ver 检测游戏版本。
-# 如果检测失败，将默认使用 "latest"。
-# globalSchemaVersion: ""
+# Shared settings for global clients (en, ja, de, fr)
+global:
+  path: "C:/Program Files (x86)/SquareEnix/FINAL FANTASY XIV - A Realm Reborn"
+  # schemaVersion: "" # Auto-detected via ffxivgame.ver; falls back to "latest"
 
-en:
-  outputDir: "./rawexd/en"
-ja:
-  outputDir: "./rawexd/ja"
-de:
-  outputDir: "./rawexd/de"
-fr:
-  outputDir: "./rawexd/fr"
-
-cn:
-  path: "C:/Program Files (x86)/上海数龙科技有限公司/最终幻想XIV"
-  outputDir: "./rawexd/chs"
-
-ko:
-  path: "D:/game/FFXIV_KO"
-  outputDir: "./rawexd/ko"
-  # schemaVersion: "" # 默认自动检测，检测失败则用 latest
-
-tc:
-  path: "D:/game/FFXIV_TC"
-  outputDir: "./rawexd/tc"
-  # schemaVersion: "" # 默认自动检测，检测失败则用 latest
+# Per-client settings (path/outputDir/schemaVersion are all optional overrides)
+clients:
+  en:
+  ja:
+  de:
+  fr:
+  chs:
+    path: "C:/Program Files (x86)/上海数龙科技有限公司/最终幻想XIV"
+  ko:
+    path: "D:/game/FFXIV_KO"
+    # schemaVersion: "" # Auto-detected via ffxivgame.ver; falls back to "latest"
+  tc:
+    path: "D:/game/FFXIV_TC"
+    # schemaVersion: "" # Auto-detected via ffxivgame.ver; falls back to "latest"
