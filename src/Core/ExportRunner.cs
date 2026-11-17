@@ -329,14 +329,16 @@ public static class ExportRunner
             exportLanguage = Language.English;
 
         bool isInternational = InternationalKeys.Contains(clientKey);
-        string? gamePath = !string.IsNullOrEmpty(client?.Path)
-            ? client.Path
-            : (isInternational ? config.Global?.Path : null);
+        string? gamePath = client?.Path;
         string outputRoot = string.IsNullOrWhiteSpace(config.OutputRoot)
             ? "./rawexd"
             : config.OutputRoot;
         string outputDir = !string.IsNullOrWhiteSpace(client?.OutputDir)
-            ? client.OutputDir
+            ? (
+                isInternational
+                    ? Path.Combine(client.OutputDir, clientKey.ToLowerInvariant())
+                    : client.OutputDir
+            )
             : Path.Combine(outputRoot, clientKey.ToLowerInvariant());
 
         if (!Path.IsPathRooted(outputDir))
@@ -424,9 +426,7 @@ public static class ExportRunner
         }
 
         string? detectedVersion = ReadGameVersion(gamePath);
-        string? schemaVersion = isInternational
-            ? client?.SchemaVersion ?? config.Global?.SchemaVersion
-            : client?.SchemaVersion;
+        string? schemaVersion = client?.SchemaVersion;
         if (
             string.IsNullOrEmpty(schemaVersion)
             || schemaVersion.Equals("latest", StringComparison.OrdinalIgnoreCase)
@@ -1034,21 +1034,8 @@ public static class ExportRunner
     {
         try
         {
-            if (isInternational)
-            {
-                config.Global ??= new();
-                config.Global.Path = path;
-            }
-            else
-            {
-                config.Clients ??= new(StringComparer.OrdinalIgnoreCase);
-                if (!config.Clients.TryGetValue(clientKey, out var target) || target == null)
-                {
-                    target = new ClientConfig();
-                    config.Clients[clientKey] = target;
-                }
-                target.Path = path;
-            }
+            var target = config.GetOrCreateRegionClient(clientKey);
+            target.Path = path;
             ConfigService.SaveConfig(config);
             ConsoleLogger.TagSuccess(clientKey, Localizer.T(MsgKey.SavingDetectedPath));
         }

@@ -10,6 +10,7 @@ public record CommandLineArgs
     public bool Clear { get; init; }
     public bool SkipOffset { get; init; }
     public bool ShowHelp { get; init; }
+    public string? ErrorMessage { get; init; }
 }
 
 public static class CliOptions
@@ -21,40 +22,38 @@ public static class CliOptions
         bool hexCode = false;
         bool clear = false;
         bool skipOffset = false;
-        bool showHelp = false;
 
         for (int i = 0; i < args.Length; i++)
         {
             var arg = args[i];
 
-            switch (arg.ToLower())
+            switch (arg.ToLowerInvariant())
             {
                 case "--help":
                 case "-h":
                 case "/?":
-                    showHelp = true;
-                    break;
+                    return new CommandLineArgs { ShowHelp = true };
 
                 case "--language":
                 case "-l":
-                    i++;
-                    while (i < args.Length && !args[i].StartsWith('-'))
+                    if (!TryReadValues(args, ref i, languages))
                     {
-                        languages.Add(args[i]);
-                        i++;
+                        return new CommandLineArgs
+                        {
+                            ErrorMessage = Localizer.TF(MsgKey.ErrorMissingOptionValue, arg),
+                        };
                     }
-                    i--;
                     break;
 
                 case "--sheets":
                 case "-s":
-                    i++;
-                    while (i < args.Length && !args[i].StartsWith('-'))
+                    if (!TryReadValues(args, ref i, sheets))
                     {
-                        sheets.Add(args[i]);
-                        i++;
+                        return new CommandLineArgs
+                        {
+                            ErrorMessage = Localizer.TF(MsgKey.ErrorMissingOptionValue, arg),
+                        };
                     }
-                    i--;
                     break;
 
                 case "--hexcode":
@@ -71,6 +70,12 @@ public static class CliOptions
                 case "-o":
                     skipOffset = true;
                     break;
+
+                default:
+                    return new CommandLineArgs
+                    {
+                        ErrorMessage = Localizer.TF(MsgKey.ErrorUnknownOption, arg),
+                    };
             }
         }
 
@@ -81,8 +86,19 @@ public static class CliOptions
             HexCode = hexCode,
             Clear = clear,
             SkipOffset = skipOffset,
-            ShowHelp = showHelp,
+            ShowHelp = false,
         };
+    }
+
+    private static bool TryReadValues(string[] args, ref int index, List<string> target)
+    {
+        int startCount = target.Count;
+        while (index + 1 < args.Length && !args[index + 1].StartsWith('-'))
+        {
+            index++;
+            target.Add(args[index]);
+        }
+        return target.Count > startCount;
     }
 
     public static void ShowHelp()

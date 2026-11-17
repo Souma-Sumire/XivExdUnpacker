@@ -3,13 +3,14 @@ using System.Text;
 using XivExdUnpacker.src.Cli;
 using XivExdUnpacker.src.Core;
 using XivExdUnpacker.src.I18n;
+using XivExdUnpacker.src.Models;
 using XivExdUnpacker.src.Services;
 
 namespace XivExdUnpacker.src;
 
 class Program
 {
-    static void Main(string[] args)
+    static int Main(string[] args)
     {
         Localizer.TryLoadFromConfigIfExists();
 
@@ -26,43 +27,79 @@ class Program
         }
         Console.OutputEncoding = Encoding.UTF8;
 
-        var parsedArgs = CliOptions.Parse(args);
-        if (parsedArgs.ShowHelp || args.Length == 0)
-        {
-            CliOptions.ShowHelp();
-            return;
-        }
+        int exitCode = Run(args);
+        InteractiveWizard.WaitForExitIfStandaloneConsole();
+        return exitCode;
+    }
 
-        if (parsedArgs.Languages == null || parsedArgs.Languages.Count == 0)
-        {
-            ConsoleLogger.TopError(Localizer.T(MsgKey.ErrorMissingLanguage));
-            ConsoleLogger.TopInfo(Localizer.T(MsgKey.ErrorUseHelp));
-            return;
-        }
+    private static int Run(string[] args)
+    {
+        AppConfig config;
+        CommandLineArgs parsedArgs;
 
-        var config = ConfigService.LoadConfig();
-        if (config.GetClients().Count == 0)
+        if (args.Length == 0)
         {
-            ConsoleLogger.TopError(Localizer.T(MsgKey.ErrorNoClientsInConfig));
-            return;
+            if (Console.IsInputRedirected)
+            {
+                CliOptions.ShowHelp();
+                return 0;
+            }
+
+            if (!ConfigService.Exists && !InteractiveWizard.RunConfigWizard())
+                return 1;
+
+            if (!TryLoadValidConfig(out config))
+                return 1;
+
+            var wizardArgs = InteractiveWizard.RunExportWizard(config);
+            if (wizardArgs == null)
+                return 1;
+            parsedArgs = wizardArgs;
+        }
+        else
+        {
+            parsedArgs = CliOptions.Parse(args);
+            if (parsedArgs.ShowHelp)
+            {
+                CliOptions.ShowHelp();
+                return 0;
+            }
+
+            if (!string.IsNullOrEmpty(parsedArgs.ErrorMessage))
+            {
+                ConsoleLogger.TopError(parsedArgs.ErrorMessage);
+                ConsoleLogger.TopInfo(Localizer.T(MsgKey.ErrorUseHelp));
+                return 1;
+            }
+
+            if (parsedArgs.Languages == null || parsedArgs.Languages.Count == 0)
+            {
+                ConsoleLogger.TopError(Localizer.T(MsgKey.ErrorMissingLanguage));
+                ConsoleLogger.TopInfo(Localizer.T(MsgKey.ErrorUseHelp));
+                return 1;
+            }
+
+            if (!TryLoadValidConfig(out config))
+                return 1;
         }
 
         List<string> filters = parsedArgs.Sheets ?? [];
         List<string> selectedKeys;
 
-        if (parsedArgs.Languages.Contains("all", StringComparer.OrdinalIgnoreCase))
+        var requestedLanguages = parsedArgs.Languages!;
+        if (requestedLanguages.Contains("all", StringComparer.OrdinalIgnoreCase))
         {
             selectedKeys = [.. config.GetClients().Keys];
         }
         else
         {
-            selectedKeys = [.. parsedArgs.Languages.Where(c => config.GetClients().ContainsKey(c))];
+            selectedKeys = [.. requestedLanguages.Where(c => config.GetClients().ContainsKey(c))];
             if (selectedKeys.Count == 0)
             {
                 ConsoleLogger.TopError(
                     Localizer.TF(
                         MsgKey.ErrorLanguagesNotFound,
-                        string.Join(", ", parsedArgs.Languages)
+                        string.Join(", ", requestedLanguages)
                     )
                 );
                 ConsoleLogger.TopInfo(
@@ -71,7 +108,7 @@ class Program
                         string.Join(", ", config.GetClients().Keys)
                     )
                 );
-                return;
+                return 1;
             }
         }
 
@@ -98,5 +135,29 @@ class Program
         totalStopwatch.Stop();
 
         ConsoleReport.PrintSummary(orderedResults, totalStopwatch.Elapsed);
+
+        bool hasFailures =
+            orderedResults.Count == 0
+            || orderedResults.Any(r => r.Status != ExportStatus.Completed || r.FailedCount > 0);
+        return hasFailures ? 1 : 0;
+    }
+
+    private static bool TryLoadValidConfig(out AppConfig config)
+    {
+        if (!ConfigService.TryLoadConfig(out config, out var configError, out var isNotFound))
+        {
+            ConsoleLogger.TopError(configError!);
+            if (isNotFound)
+                ConsoleLogger.TopInfo(Localizer.T(MsgKey.ConfigNotFoundHint));
+            return false;
+        }
+
+        if (config.GetClients().Count == 0)
+        {
+            ConsoleLogger.TopError(Localizer.T(MsgKey.ErrorNoClientsInConfig));
+            return false;
+        }
+
+        return true;
     }
 }

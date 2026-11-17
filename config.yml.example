@@ -1,25 +1,37 @@
-# UI language: "en" (default) or "chs"
+# XivExdUnpacker configuration (leave optional fields empty for default behavior)
+
+# UI language: "en" (default) or "chs" (Simplified Chinese)
 uiLanguage: "en"
 
-# Default output root directory; each client exports to <outputRoot>/<lang> unless outputDir is set
+# Default output root directory; each language exports to <outputRoot>/<lang> unless outputDir is set
 outputRoot: "./rawexd"
 
-# Shared settings for global clients (en, ja, de, fr)
+# Global client (covers en, ja, de, fr)
 global:
+  # Game installation root directory (contains boot and game); leave empty to disable
   path: "C:/Program Files (x86)/SquareEnix/FINAL FANTASY XIV - A Realm Reborn"
-  # schemaVersion: "" # Auto-detected via ffxivgame.ver; falls back to "latest"
+  # Optional output root override (exports to <outputDir>/<lang>); leave empty to use outputRoot
+  outputDir: ""
+  # Optional schema version (e.g. "latest" or specific version); empty = auto-detect via ffxivgame.ver, fallback to latest
+  schemaVersion: ""
 
-# Per-client settings (path/outputDir/schemaVersion are all optional overrides)
-clients:
-  en:
-  ja:
-  de:
-  fr:
-  chs:
-    path: "C:/Program Files (x86)/上海数龙科技有限公司/最终幻想XIV"
-  ko:
-    path: "D:/game/FFXIV_KO"
-    # schemaVersion: "" # Auto-detected via ffxivgame.ver; falls back to "latest"
-  tc:
-    path: "D:/game/FFXIV_TC"
-    # schemaVersion: "" # Auto-detected via ffxivgame.ver; falls back to "latest"
+# Simplified Chinese client (chs)
+chs:
+  # Game installation root directory (contains boot and game); leave empty to disable
+  path: "C:/Program Files (x86)/上海数龙科技有限公司/最终幻想XIV"
+  # Optional output directory override (exports directly here); leave empty to use <outputRoot>/<lang>
+  outputDir: ""
+  # Optional schema version (e.g. "latest" or specific version); empty = auto-detect via ffxivgame.ver, fallback to latest
+  schemaVersion: ""
+
+# Korean client (ko, leave empty if unused)
+ko:
+  path: ""
+  outputDir: ""
+  schemaVersion: ""
+
+# Traditional Chinese client (tc, leave empty if unused)
+tc:
+  path: ""
+  outputDir: ""
+  schemaVersion: ""
