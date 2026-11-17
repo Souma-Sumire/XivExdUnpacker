@@ -1,11 +1,8 @@
-using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text;
-using Lumina;
 using XivExdUnpacker.src.Cli;
 using XivExdUnpacker.src.Core;
 using XivExdUnpacker.src.I18n;
-using XivExdUnpacker.src.Models;
 using XivExdUnpacker.src.Services;
 
 namespace XivExdUnpacker.src;
@@ -86,37 +83,19 @@ class Program
         catch { }
 
         var totalStopwatch = Stopwatch.StartNew();
-        var clientResults = new ConcurrentBag<(string key, ClientExportResult result)>();
-        var gameDataPool = new Dictionary<string, GameData>(StringComparer.OrdinalIgnoreCase);
-        var schemaCache = new ConcurrentDictionary<
-            string,
-            (string dir, Dictionary<string, ExdSchema> schemas)
-        >(StringComparer.OrdinalIgnoreCase);
-
         int maxSheetParallelism = Math.Max(1, Environment.ProcessorCount);
 
-        foreach (var clientKey in selectedKeys)
-        {
-            var result = ExportRunner.RunDumpProcess(
-                clientKey,
-                config,
-                filters,
-                maxSheetParallelism,
-                schemaCache,
-                gameDataPool,
-                parsedArgs.HexCode,
-                parsedArgs.Clear,
-                parsedArgs.SkipOffset
-            );
-            clientResults.Add((clientKey, result));
-        }
+        var orderedResults = ExportRunner.RunAll(
+            selectedKeys,
+            config,
+            filters,
+            maxSheetParallelism,
+            parsedArgs.HexCode,
+            parsedArgs.Clear,
+            parsedArgs.SkipOffset
+        );
 
         totalStopwatch.Stop();
-
-        var orderedResults = selectedKeys
-            .Select(k => clientResults.FirstOrDefault(r => r.key == k).result)
-            .Where(r => r != null)
-            .ToList();
 
         ConsoleReport.PrintSummary(orderedResults, totalStopwatch.Elapsed);
     }

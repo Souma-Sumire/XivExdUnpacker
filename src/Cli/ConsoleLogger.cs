@@ -95,23 +95,55 @@ public static class ConsoleLogger
             return;
 
         long now = Environment.TickCount64 * TimeSpan.TicksPerMillisecond;
+        if (
+            now - Volatile.Read(ref _lastProgressTicks) < _progressIntervalTicks
+            && Volatile.Read(ref _lastProgressLength) > 0
+        )
+            return;
+
         lock (_lock)
         {
             if (now - _lastProgressTicks < _progressIntervalTicks && _lastProgressLength > 0)
                 return;
 
-            _lastProgressTicks = now;
-            var tagPrefix = FormatTag(tag);
-            var line = $"{tagPrefix} {message}";
-            int pad = Math.Max(0, _lastProgressLength - GetVisualWidth(line));
-            Console.Write("\r");
-            Console.ForegroundColor = ConsoleColor.Cyan;
-            Console.Write($"{tagPrefix} ");
-            Console.ForegroundColor = ConsoleColor.DarkGray;
-            Console.Write($"{message}{new string(' ', pad)}");
-            Console.ResetColor();
-            _lastProgressLength = GetVisualWidth(line);
+            WriteProgressUnsafe(tag, message, now);
         }
+    }
+
+    public static void Progress(string tag, Func<string> messageFactory)
+    {
+        if (Console.IsOutputRedirected)
+            return;
+
+        long now = Environment.TickCount64 * TimeSpan.TicksPerMillisecond;
+        if (
+            now - Volatile.Read(ref _lastProgressTicks) < _progressIntervalTicks
+            && Volatile.Read(ref _lastProgressLength) > 0
+        )
+            return;
+
+        lock (_lock)
+        {
+            if (now - _lastProgressTicks < _progressIntervalTicks && _lastProgressLength > 0)
+                return;
+
+            WriteProgressUnsafe(tag, messageFactory(), now);
+        }
+    }
+
+    private static void WriteProgressUnsafe(string tag, string message, long now)
+    {
+        Volatile.Write(ref _lastProgressTicks, now);
+        var tagPrefix = FormatTag(tag);
+        var line = $"{tagPrefix} {message}";
+        int pad = Math.Max(0, _lastProgressLength - GetVisualWidth(line));
+        Console.Write("\r");
+        Console.ForegroundColor = ConsoleColor.Cyan;
+        Console.Write($"{tagPrefix} ");
+        Console.ForegroundColor = ConsoleColor.DarkGray;
+        Console.Write($"{message}{new string(' ', pad)}");
+        Console.ResetColor();
+        Volatile.Write(ref _lastProgressLength, GetVisualWidth(line));
     }
 
     public static void ClearProgress()
@@ -148,8 +180,8 @@ public static class ConsoleLogger
             return;
 
         Console.Write($"\r{new string(' ', _lastProgressLength)}\r");
-        _lastProgressLength = 0;
-        _lastProgressTicks = 0;
+        Volatile.Write(ref _lastProgressLength, 0);
+        Volatile.Write(ref _lastProgressTicks, 0);
     }
 
     public static int GetVisualWidth(string s)

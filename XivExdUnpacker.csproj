@@ -7,6 +7,7 @@
     <Platforms>AnyCPU;x64</Platforms>
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>false</SelfContained>
+    <ServerGarbageCollection>true</ServerGarbageCollection>
     <DebugType>none</DebugType>
     <DebugSymbols>false</DebugSymbols>
   </PropertyGroup>
