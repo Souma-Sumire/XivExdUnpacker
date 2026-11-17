@@ -1,138 +1,201 @@
-using System;
-using System.IO;
+using System.Collections.Concurrent;
 using System.IO.Compression;
-using System.Net.Http;
-using System.Threading.Tasks;
+using System.Net;
+using System.Text;
 
 namespace XivExdUnpacker.src.Services;
+
+public record SchemaFetchResult(
+    string? DirectoryPath,
+    bool FromCache = false,
+    bool IsUpToDate = false,
+    bool IsNotFound = false,
+    string? ErrorMessage = null
+)
+{
+    public bool Success => !string.IsNullOrEmpty(DirectoryPath) && Directory.Exists(DirectoryPath);
+}
 
 public static class SchemaUpdater
 {
     private static readonly HttpClient _httpClient;
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> _downloadLocks = new(
+        StringComparer.OrdinalIgnoreCase
+    );
+    private static readonly SemaphoreSlim _refsLock = new(1, 1);
+    private static Dictionary<string, string>? _cachedRemoteRefs;
+
     private const string LATEST_ZIP_URL =
         "https://github.com/xivdev/EXDSchema/archive/refs/heads/latest.zip";
-    private const string LATEST_COMMIT_API =
-        "https://api.github.com/repos/xivdev/EXDSchema/commits/latest";
+    private const string GIT_INFO_REFS_URL =
+        "https://github.com/xivdev/EXDSchema.git/info/refs?service=git-upload-pack";
 
     static SchemaUpdater()
     {
-        _httpClient = new HttpClient();
-        // GitHub API requires a User-Agent header
+        _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
         _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("XivExdUnpacker/1.0");
     }
 
-    public static string? TryGetLocalCachedSchema(string version, string cacheDir)
+    private static async Task<(Dictionary<string, string>? refs, string? error)> GetRemoteRefsAsync()
     {
-        var path = Path.Combine(cacheDir, version);
-        if (Directory.Exists(path))
-            return path;
+        if (_cachedRemoteRefs != null)
+            return (_cachedRemoteRefs, null);
 
-        return null;
-    }
-
-    private static async Task<string?> GetLatestCommitHash(Action<string> log)
-    {
+        await _refsLock.WaitAsync();
         try
         {
-            var response = await _httpClient.GetAsync(LATEST_COMMIT_API);
-            if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
-            {
-                log("检测到 GitHub API 速率限制 (Rate Limit)。将尝试使用本地缓存。");
-                return null;
-            }
-            response.EnsureSuccessStatusCode();
+            if (_cachedRemoteRefs != null)
+                return (_cachedRemoteRefs, null);
 
-            var json = await response.Content.ReadAsStringAsync();
-            using var doc = System.Text.Json.JsonDocument.Parse(json);
-            return doc.RootElement.GetProperty("sha").GetString();
+            var response = await _httpClient.GetAsync(GIT_INFO_REFS_URL);
+            response.EnsureSuccessStatusCode();
+            var bytes = await response.Content.ReadAsByteArrayAsync();
+            var parsed = ParseGitUploadPackRefs(bytes);
+            _cachedRemoteRefs = parsed;
+            return (parsed, null);
         }
         catch (Exception ex)
         {
-            log($"检查 Github 更新失败: {ex.Message}");
-            return null;
+            return (null, ex.Message);
+        }
+        finally
+        {
+            _refsLock.Release();
         }
     }
 
-    public static async Task<string?> DownloadAndExtractSchema(
+    private static Dictionary<string, string> ParseGitUploadPackRefs(byte[] data)
+    {
+        var refs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        int pos = 0;
+        while (pos + 4 <= data.Length)
+        {
+            var lenHex = Encoding.ASCII.GetString(data, pos, 4);
+            if (!int.TryParse(lenHex, System.Globalization.NumberStyles.HexNumber, null, out int pktLen))
+                break;
+
+            pos += 4;
+            if (pktLen == 0)
+                continue;
+
+            int payloadLen = pktLen - 4;
+            if (payloadLen <= 0 || pos + payloadLen > data.Length)
+                break;
+
+            var line = Encoding.UTF8.GetString(data, pos, payloadLen);
+            pos += payloadLen;
+
+            if (line.StartsWith('#'))
+                continue;
+
+            int nulIdx = line.IndexOf('\0');
+            if (nulIdx >= 0)
+                line = line[..nulIdx];
+
+            line = line.TrimEnd('\r', '\n');
+            int spaceIdx = line.IndexOf(' ');
+            if (spaceIdx > 0 && spaceIdx + 1 < line.Length)
+            {
+                var sha = line[..spaceIdx];
+                var refName = line[(spaceIdx + 1)..];
+                refs[refName] = sha;
+            }
+        }
+        return refs;
+    }
+
+    public static async Task<SchemaFetchResult> DownloadAndExtractSchema(
         string version,
-        Action<string> log,
         string outputRoot
     )
     {
+        bool isLatest = version.Equals("latest", StringComparison.OrdinalIgnoreCase);
+        var targetDirName = isLatest ? "latest" : version;
+        var lockKey = Path.Combine(outputRoot, targetDirName);
+        var sem = _downloadLocks.GetOrAdd(lockKey, _ => new SemaphoreSlim(1, 1));
+        await sem.WaitAsync();
+
+        var zipPath = Path.Combine(outputRoot, $"{targetDirName}.zip");
+        var extractPath = Path.Combine(outputRoot, targetDirName);
+        var tempExtractPath = extractPath + ".tmp";
+
         try
         {
-            var targetUrl = "";
-            var targetDirName = "";
+            if (!isLatest && Directory.Exists(extractPath) && Directory.GetFiles(extractPath, "*.yml").Length > 0)
+                return new SchemaFetchResult(extractPath, FromCache: true);
+
+            var (remoteRefs, refsError) = await GetRemoteRefsAsync();
             string? remoteHash = null;
 
-            if (version.Equals("latest", StringComparison.OrdinalIgnoreCase))
+            if (isLatest)
             {
-                targetUrl = LATEST_ZIP_URL;
-                targetDirName = "latest";
+                if (remoteRefs != null && remoteRefs.TryGetValue("refs/heads/latest", out var sha))
+                    remoteHash = sha;
 
-                remoteHash = await GetLatestCommitHash(log);
-                var latestCachePath = Path.Combine(outputRoot, "latest");
                 var versionFile = Path.Combine(outputRoot, "latest.version");
+                bool hasContent =
+                    Directory.Exists(extractPath)
+                    && Directory.GetFiles(extractPath, "*.yml").Length > 0;
 
                 if (!string.IsNullOrEmpty(remoteHash) && File.Exists(versionFile))
                 {
                     var localHash = (await File.ReadAllTextAsync(versionFile)).Trim();
-                    bool isHashMatch = string.Equals(
-                        localHash,
-                        remoteHash.Trim(),
-                        StringComparison.OrdinalIgnoreCase
-                    );
-                    bool hasContent =
-                        Directory.Exists(latestCachePath)
-                        && Directory.GetFiles(latestCachePath, "*.yml").Length > 0;
-
-                    if (isHashMatch && hasContent)
+                    if (
+                        string.Equals(localHash, remoteHash, StringComparison.OrdinalIgnoreCase)
+                        && hasContent
+                    )
                     {
-                        log("本地 'latest' 已是最新且内容完整，跳过下载。");
-                        return latestCachePath;
+                        return new SchemaFetchResult(
+                            extractPath,
+                            FromCache: true,
+                            IsUpToDate: true
+                        );
                     }
+                }
+
+                if (remoteRefs == null)
+                {
+                    return new SchemaFetchResult(
+                        null,
+                        ErrorMessage: refsError ?? "Failed to query remote refs"
+                    );
                 }
             }
             else
             {
-                // Try version branch
-                targetUrl =
-                    $"https://github.com/xivdev/EXDSchema/archive/refs/heads/ver/{version}.zip";
-                targetDirName = version;
+                var expectedRef = $"refs/heads/ver/{version}";
+                if (remoteRefs != null && !remoteRefs.ContainsKey(expectedRef))
+                {
+                    return new SchemaFetchResult(null, IsNotFound: true, ErrorMessage: "Branch not found");
+                }
             }
 
-            var extractPath = Path.Combine(outputRoot, targetDirName);
-            var tempExtractPath = extractPath + ".tmp";
+            string targetUrl = isLatest
+                ? LATEST_ZIP_URL
+                : $"https://github.com/xivdev/EXDSchema/archive/refs/heads/ver/{version}.zip";
 
-            log($"正在下载定义: {targetUrl}");
-
-            // Ensure root exists
             Directory.CreateDirectory(outputRoot);
 
-            // Download
-            var zipPath = Path.Combine(outputRoot, $"{targetDirName}.zip");
             var response = await _httpClient.GetAsync(targetUrl);
             if (!response.IsSuccessStatusCode)
             {
-                log($"下载失败: {response.StatusCode} ({targetUrl})");
-                return null;
+                return new SchemaFetchResult(
+                    null,
+                    IsNotFound: response.StatusCode == HttpStatusCode.NotFound,
+                    ErrorMessage: $"HTTP {(int)response.StatusCode} {response.StatusCode}"
+                );
             }
+
             var zipBytes = await response.Content.ReadAsByteArrayAsync();
             await File.WriteAllBytesAsync(zipPath, zipBytes);
 
-            // Clean previous temp if exists
             if (Directory.Exists(tempExtractPath))
                 Directory.Delete(tempExtractPath, true);
 
             Directory.CreateDirectory(tempExtractPath);
-
-            log($"下载完成，正在解压...");
-
-            // Extract to TEMP
             ZipFile.ExtractToDirectory(zipPath, tempExtractPath);
-            File.Delete(zipPath); // Cleanup zip early
+            File.Delete(zipPath);
 
-            // Flatten the structure in TEMP
             var extractedDirs = Directory.GetDirectories(tempExtractPath);
             if (extractedDirs.Length == 1)
             {
@@ -158,11 +221,7 @@ public static class SchemaUpdater
                 Directory.Delete(extractPath, true);
             Directory.Move(tempExtractPath, extractPath);
 
-            // Save Commit Hash in root schemas dir if available
-            if (
-                !string.IsNullOrEmpty(remoteHash)
-                && version.Equals("latest", StringComparison.OrdinalIgnoreCase)
-            )
+            if (!string.IsNullOrEmpty(remoteHash) && isLatest)
             {
                 await File.WriteAllTextAsync(
                     Path.Combine(outputRoot, "latest.version"),
@@ -170,24 +229,24 @@ public static class SchemaUpdater
                 );
             }
 
-            return extractPath;
+            return new SchemaFetchResult(extractPath);
         }
         catch (Exception ex)
         {
-            log($"在线更新定义失败: {ex.Message}");
-            // Cleanup partial directory if exists
-            var extractPath = Path.Combine(
-                outputRoot,
-                version.Equals("latest", StringComparison.OrdinalIgnoreCase) ? "latest" : version
-            );
-            var tempExtractPath = extractPath + ".tmp";
             try
             {
+                if (File.Exists(zipPath))
+                    File.Delete(zipPath);
                 if (Directory.Exists(tempExtractPath))
                     Directory.Delete(tempExtractPath, true);
             }
             catch { }
-            return null;
+
+            return new SchemaFetchResult(null, ErrorMessage: ex.Message);
+        }
+        finally
+        {
+            sem.Release();
         }
     }
 }

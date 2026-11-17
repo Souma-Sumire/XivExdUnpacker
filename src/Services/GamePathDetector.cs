@@ -107,17 +107,54 @@ public class GamePathDetector
     private string? DetectMacOS()
     {
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-
-        string[] paths =
+        var candidates = new List<string>
         {
+            "/Applications/FINAL FANTASY XIV ONLINE.app/Contents/SharedSupport/finalfantasyxiv/support/ffxiv",
             "/Applications/FINAL FANTASY XIV ONLINE.app/Contents/SharedSupport/finalfantasyxiv",
-            Path.Combine(home, "Library", "Application Support", "XIV on Mac", "ffxiv"),
         };
 
-        foreach (var path in paths)
+        if (!string.IsNullOrEmpty(home))
         {
-            if (Directory.Exists(Path.Combine(path, "game", "sqpack")))
+            candidates.Add(
+                Path.Combine(
+                    home,
+                    "Library",
+                    "Application Support",
+                    "FINAL FANTASY XIV ONLINE",
+                    "Bottles",
+                    "published_Final_Fantasy",
+                    "drive_c",
+                    "Program Files (x86)",
+                    "SquareEnix",
+                    "FINAL FANTASY XIV - A Realm Reborn"
+                )
+            );
+            candidates.Add(Path.Combine(home, "Library", "Application Support", "XIV on Mac", "ffxiv"));
+            candidates.Add(Path.Combine(home, "Library", "Application Support", "XIV on Mac", "game"));
+            candidates.Add(
+                Path.Combine(
+                    home,
+                    "Library",
+                    "Application Support",
+                    "XIV on Mac",
+                    "wineprefix",
+                    "drive_c",
+                    "Program Files (x86)",
+                    "SquareEnix",
+                    "FINAL FANTASY XIV - A Realm Reborn"
+                )
+            );
+        }
+
+        foreach (var path in candidates)
+        {
+            if (
+                Directory.Exists(Path.Combine(path, "game", "sqpack"))
+                || Directory.Exists(Path.Combine(path, "sqpack"))
+            )
+            {
                 return path;
+            }
         }
         return null;
     }

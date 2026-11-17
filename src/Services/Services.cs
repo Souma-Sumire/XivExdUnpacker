@@ -1,5 +1,5 @@
-using System.Diagnostics;
-using System.Text.Json;
+using XivExdUnpacker.src.Cli;
+using XivExdUnpacker.src.I18n;
 using XivExdUnpacker.src.Models;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
@@ -16,9 +16,7 @@ public class ConfigService
         while (dir != null)
         {
             if (File.Exists(Path.Combine(dir.FullName, "XivExdUnpacker.csproj")))
-            {
                 return Path.Combine(dir.FullName, "config.yml");
-            }
             dir = dir.Parent;
         }
 
@@ -29,15 +27,8 @@ public class ConfigService
     {
         if (!File.Exists(ConfigPath))
         {
-            Console.WriteLine("错误: 未找到 config.yml。");
-            Console.WriteLine(
-                "请将 config.yml.example 复制并重命名为 config.yml，然后根据您的路径进行配置。"
-            );
-            Console.WriteLine("\n按任意键退出...");
-            if (!Console.IsInputRedirected)
-            {
-                Console.ReadKey();
-            }
+            ConsoleLogger.TopError(Localizer.T(MsgKey.ConfigNotFound));
+            ConsoleLogger.TopInfo(Localizer.T(MsgKey.ConfigNotFoundHint));
             Environment.Exit(1);
         }
 
@@ -47,17 +38,15 @@ public class ConfigService
                 .WithNamingConvention(CamelCaseNamingConvention.Instance)
                 .IgnoreUnmatchedProperties()
                 .Build();
-            return deserializer.Deserialize<AppConfig>(File.ReadAllText(ConfigPath))
+            var cfg =
+                deserializer.Deserialize<AppConfig>(File.ReadAllText(ConfigPath))
                 ?? new AppConfig();
+            Localizer.SetLanguage(cfg.UiLanguage);
+            return cfg;
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"错误: 无法解析 config.yml: {ex.Message}");
-            Console.WriteLine("\n按任意键退出...");
-            if (!Console.IsInputRedirected)
-            {
-                Console.ReadKey();
-            }
+            ConsoleLogger.TopError(Localizer.TF(MsgKey.ConfigParseFailed, ex.Message));
             Environment.Exit(1);
             return new AppConfig();
         }
@@ -65,18 +54,10 @@ public class ConfigService
 
     public static void SaveConfig(AppConfig config)
     {
-        try
-        {
-            var serializer = new SerializerBuilder()
-                .WithNamingConvention(CamelCaseNamingConvention.Instance)
-                .Build();
-            File.WriteAllText(ConfigPath, serializer.Serialize(config), System.Text.Encoding.UTF8);
-            Console.WriteLine("配置已成功保存至 config.yml");
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"错误: 无法保存 config.yml: {ex.Message}");
-        }
+        var serializer = new SerializerBuilder()
+            .WithNamingConvention(CamelCaseNamingConvention.Instance)
+            .Build();
+        File.WriteAllText(ConfigPath, serializer.Serialize(config), System.Text.Encoding.UTF8);
     }
 }
 
@@ -89,8 +70,6 @@ public class SchemaService
 
     public static Dictionary<string, ExdSchema> LoadSchemas(string schemaDir)
     {
-        string version = Path.GetFileName(schemaDir);
-        Console.WriteLine($"[Schema] 正在解析 YAML 定义，请稍候 ({version})...");
         var schemas = new System.Collections.Concurrent.ConcurrentDictionary<string, ExdSchema>(
             StringComparer.OrdinalIgnoreCase
         );
@@ -112,9 +91,9 @@ public class SchemaService
                     if (schema?.Name != null)
                         schemas.TryAdd(schema.Name, schema);
                 }
-                catch (Exception ex)
+                catch
                 {
-                    Console.WriteLine($"[Schema] 加载 {Path.GetFileName(file)} 失败: {ex.Message}");
+                    // Skip malformed schema files silently; valid schemas still apply
                 }
             }
         );
